@@ -23,9 +23,8 @@ from tools import dist_util, logger
 from evaluations.evaluator import Evaluator
 import tensorflow.compat.v1 as tf # type: ignore
 from datasets.data_loader import load_dataset
-from tools.cfg_edm import ablation_sampler
+from tools.cfg_edm import ablation_sampler, float_equal, Net
 from models.unet import *; from models.dit import *; from models.vit import *; from models.uvit import *
-from tools.cfg_edm import Net, float_equal
 from tools.trainer import Trainer
 from diffusers.models import AutoencoderKL
 from tools.resample import LossAwareSampler, UniformSampler, create_named_schedule_sampler
