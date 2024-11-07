@@ -319,14 +319,6 @@ def warmup_cosine_lr(step, warmup_steps, total_steps, lr, final_lr, cosine_decay
         else:
             return 1
         
-def ema(source, target, decay):
-    with torch.no_grad():
-        source_dict = source.state_dict()
-        target_dict = target.state_dict()
-        for key in source_dict.keys():
-            target_dict[key].data.copy_(
-                target_dict[key].data * decay + source_dict[key].data * (1 - decay))
-        
 def sync_ema_model(ema_model):
     for param in ema_model.parameters():
         dist.broadcast(param.data, src=0)  # src=0 means broadcast from rank 0
