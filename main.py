@@ -283,7 +283,6 @@ def build_diffusion(args, use_ddim=False):
         model_var_type=ModelVarType[args.var_type.upper()],
         loss_type=LossType[args.loss_type.upper()],
         rescale_timesteps=True,
-        eps_scaler=args.eps_scaler,
         mse_loss_weight_type=args.weight_type
     )
 
