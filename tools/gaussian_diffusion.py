@@ -389,7 +389,7 @@ class GaussianDiffusion:
         ind = t[0].cpu().numpy()
         return (
             _extract_into_tensor(self.sqrt_recip_alphas_cumprod, t, x_t.shape) * x_t
-            - _extract_into_tensor(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape) * (eps/self.sampling_scaler[ind])
+            - _extract_into_tensor(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape) * eps
         )
         
     def _predict_xstart_from_v(self, x_t, t, v):
