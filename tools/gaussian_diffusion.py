@@ -174,7 +174,6 @@ class GaussianDiffusion:
         model_var_type,
         loss_type,
         rescale_timesteps=False,
-        eps_scaler=0.0,
         mse_loss_weight_type='constant',
     ):
         self.model_mean_type = model_mean_type
@@ -220,14 +219,6 @@ class GaussianDiffusion:
             * np.sqrt(alphas)
             / (1.0 - self.alphas_cumprod)
         )
-        self.eps_scaler = eps_scaler
-        # linear schedule
-        # start = 1.011 - self.eps_scaler * ((self.num_timesteps - 1) / 2)
-        # self.sampling_scaler = [(start + i * self.eps_scaler) for i in range(0, self.num_timesteps)]
-
-        # uniform schedule
-        self.sampling_scaler = [self.eps_scaler for i in range(0, self.num_timesteps)]
-
 
     def q_mean_variance(self, x_start, t):
         """
@@ -834,8 +825,7 @@ class GaussianDiffusion:
             model_kwargs = {}
         if noise is None:
             noise = th.randn_like(x_start)
-        new_noise = noise + self.eps_scaler * th.randn_like(noise)
-        x_t = self.q_sample(x_start, t, noise=new_noise)
+        x_t = self.q_sample(x_start, t, noise=noise)
 
         terms = {}
         
