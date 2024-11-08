@@ -3,7 +3,7 @@ from tqdm import tqdm
 import torch.distributed as dist
 from diffusers.models import AutoencoderKL
 from tools import dist_util
-from cfg_edm import ablation_sampler, float_equal, Net
+from .cfg_edm import ablation_sampler, float_equal, Net
 from models.unet import EncoderUNetModel
 
 class Sampler:
