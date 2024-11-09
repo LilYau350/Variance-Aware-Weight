@@ -94,6 +94,8 @@ def compress_batch(images, device, vae):
     images = images.to(device)
     
     with torch.no_grad():
+        # 0.18215 is a scale factor that aims to make the standard deviation of the latent distribution close to 1
+        # for more stable diffusion model training.
         latents = vae.encode(images).latent_dist.mean * 0.18215
     return latents
 
