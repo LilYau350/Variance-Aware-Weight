@@ -427,7 +427,7 @@ def train(args, **kwargs):
                     
             # Sample and save images
             if args.sample_step > 0 and step % args.sample_step == 0:
-                sample_and_save(args, ema_model, sample_diffusion, device, step, save_grid=True)
+                sample_and_save(args, step, device, ema_model, sample_diffusion, save_grid=True)
                     
             # Save checkpoint
             if args.save_step > 0 and step % args.save_step == 0 and step > 0:
