@@ -56,20 +56,20 @@ class Sampler:
     def __init__(self, args, device, eval_model, diffusion, classifier=None):
         self.args = args
         self.device = device
-        self.eval_model = eval_model
+        self.model = eval_model
         self.diffusion = diffusion
         self.classifier = classifier
 
     def _model_fn(self, x, t, y=None):
-        return self.eval_model(x, t, y if self.args.class_cond else None)
+        return self.model(x, t, y if self.args.class_cond else None)
 
     def ddim_sampler(self, num_samples, sample_size, image_size, num_classes, progress_bar=False):
-        self.eval_model.eval()
+        self.model.eval()
         all_samples, all_labels = [], []
         world_size = dist.get_world_size() if self.args.parallel else 1
 
         if self.args.parallel:
-            sync_ema_model(self.eval_model)
+            sync_ema_model(self.model)
             dist.barrier()
 
         if progress_bar and dist_util.is_main_process():
@@ -78,7 +78,7 @@ class Sampler:
         while len(all_samples) * sample_size < num_samples:
             classes = torch.randint(0, num_classes, (sample_size,), device=self.device) if self.args.class_cond else None
             sample = self.diffusion.ddim_sample_loop(
-                self.eval_model if not self.classifier else self._model_fn,
+                self.model if not self.classifier else self._model_fn,
                 (sample_size, 3, image_size, image_size),
                 device=self.device,
                 model_kwargs={"y": classes} if self.args.class_cond else {},
@@ -94,19 +94,19 @@ class Sampler:
         return all_samples, all_labels
 
     def heun_sampler(self, num_samples, sample_size, image_size, num_classes, progress_bar=False):
-        self.eval_model.eval()
+        self.model.eval()
         all_samples, all_labels = [], []
         world_size = dist.get_world_size() if self.args.parallel else 1
 
         if self.args.parallel:
-            sync_ema_model(self.eval_model)
+            sync_ema_model(self.model)
             dist.barrier()
 
         if progress_bar and dist_util.is_main_process():
             pbar = tqdm(total=num_samples, desc="Generating Samples (Heun)")
 
         vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse").to(self.device) if self.args.in_chans == 4 else None
-        net = Net(model=self.eval_model, img_channels=self.args.in_chans, img_resolution=image_size,
+        net = Net(model=self.model, img_channels=self.args.in_chans, img_resolution=image_size,
                   noise_schedule=self.args.beta_schedule, amp=self.args.amp).to(self.device)
 
         while len(all_samples) * sample_size < num_samples:
