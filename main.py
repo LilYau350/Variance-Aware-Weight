@@ -439,7 +439,7 @@ def train(args, **kwargs):
             
             # Evaluate
             if args.eval and args.eval_step > 0 and step % args.eval_step == 0 and step > 0:
-                eval(args, device, model, ema_model, sample_diffusion, evaluator, ref_stats, eval_dir, step)        
+                eval(args, **{**kwargs, 'step': step})        
  
 def init(args):
     if args.parallel:
