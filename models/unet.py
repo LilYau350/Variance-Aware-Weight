@@ -6,8 +6,8 @@ import numpy as np
 import torch 
 import torch.nn as nn
 import torch.nn.functional as F
-
-# from tools.trainer import convert_module_to_f16, convert_module_to_f32
+from torch.cuda.amp import autocast
+# from tools.fp16_util import convert_module_to_f16, convert_module_to_f32
 from tools.nn import (
     checkpoint,
     conv_nd,
@@ -299,9 +299,10 @@ class AttentionBlock(nn.Module):
     def _forward(self, x):
         b, c, *spatial = x.shape
         x = x.reshape(b, c, -1)
-        qkv = self.qkv(self.norm(x))
-        h = self.attention(qkv)
-        h = self.proj_out(h)
+        with autocast():
+            qkv = self.qkv(self.norm(x))
+            h = self.attention(qkv)
+            h = self.proj_out(h)
         return (x + h).reshape(b, c, *spatial)
 
 
@@ -469,7 +470,6 @@ class UNetModel(nn.Module):
         self.num_heads_upsample = num_heads_upsample
 
         self.drop_label_prob = drop_label_prob
-
         if in_channels == 4:
             time_embed_dim = 512  
         else:
@@ -665,10 +665,8 @@ class UNetModel(nn.Module):
         #     self.num_classes is not None
         # ), "must specify y if and only if the model is class-conditional"
         assert (y is not None) == (self.num_classes > 0), "must specify y if and only if the model is class-conditional"
-        
         hs = []
         emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
-
         # if self.num_classes is not None:
         if self.num_classes > 0:
             use_dropout = (self.drop_label_prob > 0) and self.training
