@@ -29,18 +29,16 @@ We follow [ScoreSDE](https://github.com/yang-song/score_sde/blob/0acb9e0ea3b8ccc
 
 #### ImageNet Dataset
 For ImageNet, download the dataset from the [official website](https://image-net.org/download-images). We provide both online and offline preprocessing:
-
+##### ImageNet-64
 - **Online Processing**: The functionality for online processing is integrated into [data_loader.py](/datasets/data_loader.py).
 - **Offline Preprocessing for ImageNet-64**: Use the script at [image_resizer_imagenet.py](/preprocessing/image_resizer_imagenet.py).
-
-
 ``` bash
 python ./preprocessing/image_resizer_imagenet.py -i /path/to/imagenet -o /path/to/output --size 64 -r
 ```
 
 We refer to the methods described in [this paper](https://arxiv.org/abs/1707.08819) and use code from [PatrykChrabaszcz/resize](https://github.com/PatrykChrabaszcz/Imagenet32_Scripts/blob/master/image_resizer_imagent.py) and [openai/guided diffusion](https://github.com/openai/guided-diffusion/blob/22e0df8183507e13a7813f8d38d51b072ca1e67c/guided_diffusion/image_datasets.py#L126). We use BOX and BICUBIC methods to ensure high-quality resizing.
 
-#### ImageNet-256
+##### ImageNet-256
 For ImageNet-256, we crop images to 256x256 and compress them using AutoencoderKL from [Diffusers](https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/autoencoder_kl.py). We provide a preprocessing script at [encode.py](./preprocessing/encode.py). 
 ``` bash
 python ./preprocessing/encode.py --input /path/to/imagenet --output /path/to/output --batch_size 32 --image_size 256
