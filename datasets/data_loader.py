@@ -136,11 +136,11 @@ def load_celebA(data_dir, image_size, random_crop, random_flip):
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
 
-    train_dataset = datasets.ImageFolder(root=data_dir, transform=transform)
+    train_dataset = datasets.ImageFolder(root=f"{data_dir}/train", transform=transform)
     # Returns an empty TensorDataset as a testset
-    test_dataset = torch.utils.data.TensorDataset(torch.empty(0, 3, image_size, image_size))
+    val_dataset = datasets.ImageFolder(root=f"{data_dir}/val", transform=transform)
     
-    return train_dataset, test_dataset
+    return train_dataset, val_dataset
 
 # LSUN Bedroom Dataset
 def load_lsun_bedroom(data_dir, image_size, random_crop, random_flip):
