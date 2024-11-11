@@ -53,7 +53,7 @@ The compressed latent codes are treated as images, except for their file extensi
 To compare different generative models, we use FID, sFID, Precision, Recall, and Inception Score. These metrics are calculated using batches of samples stored in `.npz` (numpy) files.
 
 #### Download Batches
-OpenAI provides pre-computed sample batches for reference datasets and several baselines, all stored in `.npz` format. For links to download all the sample and reference batches, refer to [`./evaluations/README.md`](./evaluations/README.md).
+OpenAI provides pre-computed sample batches for reference datasets and several baselines, all stored in `.npz` format. For links to download all the sample and reference batches, refer to [evaluations/README.md](./evaluations/README.md).
 
 #### Compute Your Own Statistics
 We also provide a script at [cal_ref_stats.py](./preprocessing/cal_ref_stats.py) to calculate `sigma` and `mu` for custom datasets, which are used for FID and Inception Score calculations. You can use this script to compute reference statistics on your own dataset. 
