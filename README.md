@@ -25,7 +25,7 @@ We follow [ScoreSDE](https://github.com/yang-song/score_sde/blob/0acb9e0ea3b8ccc
    ``` bash
    python ./preprocessing/preprocess_celeba.py --data_dir=/path/to/data/ --out_dir=./CelebA --partition=train
    ```
-   Run this script for `--partition=[train, val, test]` to cache all necessary data. The preprocessed files will be saved in `data/`.
+   Run this script for `--partition=[train, val, test]` to cache all necessary data. The preprocessed files will be saved in `CelebA/`.
 
 #### ImageNet Dataset
 For ImageNet, download the dataset from the [official website](https://image-net.org/download-images). We provide both online and offline preprocessing:
