@@ -107,9 +107,9 @@ tensorflow-io-gcs-filesystem==0.34.0
 termcolor==2.4.0
 threadpoolctl==3.2.0
 timm==0.6.12
-torch==2.1.2
-torchaudio==2.1.2
-torchvision==0.16.2
+torch==2.1.1
+torchaudio==2.1.1
+torchvision==0.16.1
 tornado==6.4
 tqdm==4.66.1
 traitlets==5.14.0
@@ -122,4 +122,5 @@ werkzeug==3.0.1
 wrapt==1.14.1
 wurlitzer==3.0.3
 xgboost==2.0.2
+xformers==0.0.23
 zipp==3.20.2
