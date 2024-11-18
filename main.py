@@ -79,7 +79,7 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=128, help="Batch size for training")
     parser.add_argument("--num_workers", type=int, default=4, help="Number of workers for DataLoader")
     parser.add_argument("--ema_decay", type=float, default=0.9999, help="EMA decay rate")
-    parser.add_argument('--sampler_type', type=str, default='loss-second-moment', choices=['uniform', 'loss-second-moment'], help='Type of schedule sampler to use')
+    parser.add_argument('--sampler_type', type=str, default='uniform', choices=['uniform', 'loss-second-moment'], help='Type of schedule sampler to use')
     parser.add_argument("--cosine_decay", default=True, type=str2bool, help="Whether to use cosine learning rate decay")
     parser.add_argument("--class_cond", default=True, type=str2bool, help="Set class_cond to enable class-conditional generation.")
     parser.add_argument("--learn_sigma", default=False, type=str2bool, help="Set learn_sigma to enable learn distribution sigma.")
