@@ -59,24 +59,34 @@ class Trainer:
         if self.args.parallel:
             self.train_loader.sampler.set_epoch(step)
         
-        images, labels = self._get_next_batch()
-        self.optimizer.zero_grad()
-        
-        # Mixed precision training
-        if self.args.amp:
-            with autocast():
-                loss = self._compute_loss(images, labels)
-            self.scaler.scale(loss).backward()
-            if self.args.grad_clip:
-                self.scaler.unscale_(self.optimizer)
-                self._apply_gradient_clipping()
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
-        else:
-            loss = self._compute_loss(images, labels)
-            loss.backward()
-            self._apply_gradient_clipping()
-            self.optimizer.step()
+        grad_accumulation = max(1, self.args.grad_accumulation)  # Ensure cumulative steps are least 1
+        loss_accumulated = 0.0
+
+        for accumulation_step in range(grad_accumulation):
+            images, labels = self._get_next_batch()
+            
+            if self.args.amp:
+                with autocast():
+                    loss = self._compute_loss(images, labels) / grad_accumulation  # Scale loss for accumulation
+                self.scaler.scale(loss).backward()
+            else:
+                loss = self._compute_loss(images, labels) / grad_accumulation  # Scale loss for accumulation
+                loss.backward()
+
+            loss_accumulated += loss.item()
+
+            # Perform optimization step only after grad_accumulation steps
+            if (accumulation_step + 1) % grad_accumulation == 0:
+                if self.args.amp:
+                    if self.args.grad_clip:
+                        self.scaler.unscale_(self.optimizer)
+                        self._apply_gradient_clipping()
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    self._apply_gradient_clipping()
+                    self.optimizer.step()
+                self.optimizer.zero_grad()
         
         # Update scheduler
         self.scheduler.step()
@@ -84,8 +94,9 @@ class Trainer:
         if dist_util.is_main_process():
             self._update_ema()
             self.pbar.update(1)
-            self.pbar.set_postfix(loss=loss.item())
-        
-        return loss.item()  # Return loss value for logging if needed
+            self.pbar.set_postfix(loss=loss_accumulated)
+
+        return loss_accumulated  # Return scalar accumulated loss 
+
 
 
