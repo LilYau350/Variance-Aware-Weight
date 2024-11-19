@@ -77,6 +77,7 @@ def parse_args():
     parser.add_argument("--total_steps", type=int, default=400000, help="Total training steps")
     parser.add_argument("--warmup_steps", type=int, default=5000, help="Learning rate warmup")
     parser.add_argument("--batch_size", type=int, default=128, help="Batch size for training")
+    parser.add_argument('--grad_accumulation', type=int, default=1, help='Number of gradient accumulation steps (default: 1, no accumulation)')
     parser.add_argument("--num_workers", type=int, default=4, help="Number of workers for DataLoader")
     parser.add_argument("--ema_decay", type=float, default=0.9999, help="EMA decay rate")
     parser.add_argument('--sampler_type', type=str, default='uniform', choices=['uniform', 'loss-second-moment'], help='Type of schedule sampler to use')
@@ -121,7 +122,7 @@ def get_lr_lambda(args):
         step, args.warmup_steps, args.total_steps,
         args.lr, args.final_lr, args.cosine_decay)
 
-def save_checkpoint(model, optimizer, step, args, ema_model=None):
+def save_checkpoint(args, step, model, optimizer, ema_model=None):
     if dist_util.is_main_process():
         checkpoint_dir = 'checkpoint'
         os.makedirs(checkpoint_dir, exist_ok=True)
@@ -317,13 +318,13 @@ def save_metrics_to_csv(args, eval_dir, metrics, step):
             writer.writerow(['Step'] + list(metrics.keys()))
         writer.writerow([step] + list(metrics.values()))
 
-def sample_and_save(args, model, ema_model, sample_diffusion, device, step, save_grid=False):
+def sample_and_save(args, step, device, eval_model, sample_diffusion, save_grid=False):
     """Sample images from the model and either save them as a grid or for evaluation."""
-    sampler = Sampler.sample(args, device, model, ema_model, sample_diffusion,)
+    sampler = Sampler.sample(args, device, eval_model, sample_diffusion,)
     
     with torch.no_grad():
         all_samples, all_labels = sampler(
-            args, model, sample_diffusion, 
+            args, eval_model, sample_diffusion, 
             num_samples=args.num_samples if not save_grid else args.sample_size, 
             sample_size=args.sample_size, 
             image_size=args.image_size, 
@@ -361,9 +362,9 @@ def sample_and_save(args, model, ema_model, sample_diffusion, device, step, save
 
     return None
         
-def calculate_metrics(args, device, model, ema_model, sample_diffusion, evaluator, ref_stats, step):
+def calculate_metrics(args, step, device, eval_model, sample_diffusion, evaluator, ref_stats):
     # Sample images and get the array
-    arr = sample_and_save(args, model, ema_model, sample_diffusion, device, step)
+    arr = sample_and_save(args, step, device, eval_model, sample_diffusion)
     
     if dist_util.is_main_process():
         # Calculate metrics if in evaluation mode
@@ -383,10 +384,10 @@ def eval(args, **kwargs):
         kwargs['eval_dir'], kwargs['step']
     )
     # Evaluate net_model and ema_model
-    # net_is_score, net_fid = calculate_metrics(args, model, sample_diffusion,  evaluator, ref_stats, device, step)
+    # net_is_score, net_fid = calculate_metrics(args, step, device, model, sample_diffusion,  evaluator, ref_stats)
     # if dist_util.is_main_process():
     #     print(f"Model(NET): IS:{net_is_score:.3f}, FID:{net_fid:.3f}")
-    ema_is_score, ema_fid = calculate_metrics(args, device, model, ema_model, sample_diffusion, evaluator, ref_stats, step)
+    ema_is_score, ema_fid = calculate_metrics(args, step, device, ema_model, sample_diffusion, evaluator, ref_stats)
     if dist_util.is_main_process():
         print(f"Model(EMA): IS:{ema_is_score:.3f}, FID:{ema_fid:.3f}")
         
@@ -413,7 +414,8 @@ def train(args, **kwargs):
         
     if dist_util.is_main_process():
         print('Model params: %.2f M' % (model_size / 1_000_000))
-       
+        print('Total batch size (per update step): %d' % (args.batch_size * args.grad_accumulation))
+
     # If resuming training from a checkpoint, set the start step
     start_step = checkpoint['step'] if args.resume and checkpoint else 0
 
@@ -432,7 +434,7 @@ def train(args, **kwargs):
             # Save checkpoint
             if args.save_step > 0 and step % args.save_step == 0 and step > 0:
                 if dist_util.is_main_process():
-                    save_checkpoint(model, optimizer, step, args, ema_model=ema_model)  
+                    save_checkpoint(args, step, model, optimizer, ema_model=ema_model)  
                     
             if args.parallel: 
                 dist.barrier()     
