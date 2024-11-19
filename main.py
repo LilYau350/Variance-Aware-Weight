@@ -321,7 +321,7 @@ def save_metrics_to_csv(args, eval_dir, metrics, step):
 def sample_and_save(args, step, device, eval_model, sample_diffusion, save_grid=False):
     """Sample images from the model and either save them as a grid or for evaluation."""
     classifier = Classifier(args, device, eval_model) if args.use_classifier else None
-    sampler = Sampler(args, device, eval_model, sample_diffusion, classifier)
+    sampler = Sampler(args, device, eval_model, sample_diffusion, classifier=classifier)
     
     with torch.no_grad():
         all_samples, all_labels = sampler.sample(
