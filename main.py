@@ -19,7 +19,7 @@ from tools import dist_util, logger
 from evaluations.evaluator import Evaluator
 import tensorflow.compat.v1 as tf  # type: ignore
 from tools.trainer import Trainer
-from tools.sampler import Sampler
+from tools.sampler import Sampler, Classifier
 from datasets.data_loader import load_dataset
 from tools.respace import SpacedDiffusion, space_timesteps
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -321,7 +321,7 @@ def save_metrics_to_csv(args, eval_dir, metrics, step):
 def sample_and_save(args, step, device, eval_model, sample_diffusion, save_grid=False):
     """Sample images from the model and either save them as a grid or for evaluation."""
     classifier = Classifier(args, device, eval_model) if args.use_classifier else None
-    sampler = sampler(args, device, eval_model, sample_diffusion, classifier)
+    sampler = Sampler(args, device, eval_model, sample_diffusion, classifier)
     
     with torch.no_grad():
         all_samples, all_labels = sampler.sample(
