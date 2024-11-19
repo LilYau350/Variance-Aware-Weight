@@ -95,23 +95,23 @@ torchrun  --nproc_per_node=2 main.py --train True --eval True --data_dir '' --da
 torchrun  --nproc_per_node=2 main.py --train True --eval True --data_dir '' --dataset 'ImageNet' \
           --patch_size 4 --in_chans 3 --image_size 64 --num_classes 1000 --model 'ViT-L' \
           --lr 1e-4 --betas 0.99 0.99 --dropout 0.0 --drop_label_prob 0.15 --total_steps 800000 --batch_size 256 \
+          --beta_schedule 'optim_3' --loss_type 'MAPPED_MSE' --weight_type 'constant' --sampler_type 'uniform'\    
           --warmup_steps 5000 --cosine_decay False --class_cond True --parallel True --amp True  \
-          --beta_schedule 'optim_3' --loss_type 'MAPPED_MSE' --weight_type 'constant' --sampler_type 'uniform'\
           --sample_timesteps 20 --guidance_scale 1.5 --eps_scaler 1.0 --save_step 200000 --eval_step 200000 --fid_cache '' \
 
 # ImageNet 32×32×4 UNet
 torchrun  --nproc_per_node=2 main.py --train True --eval True --data_dir '' --dataset 'Encoded_ImageNet' \
           --in_chans 4 --image_size 32 --num_classes 1000 --model 'LDM' \
           --lr 1e-4 --betas 0.9 0.999 --dropout 0.0 --drop_label_prob 0.15 --total_steps 800000 --batch_size 256 \
-          --warmup_steps 5000 --cosine_decay False --class_cond True --parallel True --amp True  \
           --beta_schedule 'optim_3' --loss_type 'MAPPED_MSE' --weight_type 'constant' --sampler_type 'uniform'\
+          --warmup_steps 5000 --cosine_decay False --class_cond True --parallel True --amp True  \
           --sample_timesteps 50 --guidance_scale 1.5 --eps_scaler 1.0 --save_step 200000 --eval_step 200000 --fid_cache '' \
 
 # ImageNet 32×32×4 ViT
 torchrun  --nproc_per_node=2 main.py --train True --eval True --data_dir '' --dataset 'Encoded_ImageNet' \
           --patch_size 2 --in_chans 4 --image_size 32 --num_classes 1000 --model 'ViT-L' \
           --lr 1e-4 --betas 0.99 0.99 --dropout 0.0 --drop_label_prob 0.15 --total_steps 800000 --batch_size 256 \
-          --warmup_steps 5000 --cosine_decay False --class_cond True --parallel True --amp True  \
           --beta_schedule 'optim_3' --loss_type 'MAPPED_MSE' --weight_type 'constant' --sampler_type 'uniform'\
+          --warmup_steps 5000 --cosine_decay False --class_cond True --parallel True --amp True  \
           --sample_timesteps 50 --guidance_scale 1.5 --eps_scaler 1.0 --save_step 200000 --eval_step 200000 --fid_cache '' \
 
