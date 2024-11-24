@@ -40,7 +40,7 @@ model_variants = [
     "UNet-32","ADM-32", "ADM-64", "ADM-128", "ADM-256", "ADM-512", "UNet-64", "LDM",
     "ViT-S", "ViT-B", "ViT-L", "ViT-XL",
     "DiT-S", "DiT-B", "DiT-L", "DiT-XL",
-    "UViT-S", "UViT-S-D", "UViT-M", "UViT-L", "UViT-H"]
+    "U-ViT-S", "U-ViT-S-D", "U-ViT-M", "U-ViT-L", "U-ViT-H"]
      
 def parse_args():
     parser = argparse.ArgumentParser(description="Train and evaluate guided diffusion models")
@@ -210,8 +210,8 @@ def build_model(args):
     dit_models = {
         "DiT-S": DiT_S, "DiT-B": DiT_B, "DiT-L": DiT_L, "DiT-XL": DiT_XL}
     uvit_models = {
-        "UViT-S": UViT_S, "UViT-S-D": UViT_S_D, "UViT-M": UViT_M, 
-        "UViT-L": UViT_L, "UViT-H": UViT_H}
+        "U-ViT-S": UViT_S, "U-ViT-S-D": UViT_S_D, "U-ViT-M": UViT_M, 
+        "U-ViT-L": UViT_L, "U-ViT-H": UViT_H}
 
     model_dict = {**unet_models, **vit_models, **dit_models, **uvit_models}
 
@@ -221,24 +221,20 @@ def build_model(args):
     if any(x in args.model for x in ["UNet", "ADM", "LDM"]):
         model = model_dict[args.model](num_classes=args.num_classes, in_channels=args.in_chans, 
                                        drop_label_prob=args.drop_label_prob, dropout=args.dropout, 
-                                       learn_sigma=args.learn_sigma, class_cond=args.class_cond,)
-        
+                                       learn_sigma=args.learn_sigma, class_cond=args.class_cond)
+    elif "U-ViT" in args.model:
+        model = model_dict[args.model](image_size=args.image_size, patch_size=args.patch_size,
+                                       in_channels=args.in_chans, num_classes=args.num_classes)        
     elif "ViT" in args.model:
-        model = model_dict[args.model](
-        image_size=args.image_size,
-        patch_size=args.patch_size,
-        num_classes=args.num_classes,
-        in_channels=args.in_chans,
-        learn_sigma=args.learn_sigma, 
-        drop_rate=args.dropout, 
-        drop_label_prob=args.drop_label_prob,  
-        )
-    else:
-        model = model_dict[args.model](
-            image_size=args.image_size,
-            patch_size=args.patch_size,
-            num_classes=args.num_classes,
-        )
+        model = model_dict[args.model](image_size=args.image_size, patch_size=args.patch_size,
+                                       num_classes=args.num_classes, in_channels=args.in_chans,
+                                       learn_sigma=args.learn_sigma, drop_rate=args.dropout, 
+                                       drop_label_prob=args.drop_label_prob)
+
+    elif "DiT" in args.model:
+        model = model_dict[args.model](image_size=args.image_size, patch_size=args.patch_size,
+                                       in_channels=args.in_chans, num_classes=args.num_classes,
+                                       learn_sigma=args.learn_sigma)
     
     return model
 
