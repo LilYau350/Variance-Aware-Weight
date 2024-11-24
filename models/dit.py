@@ -330,17 +330,21 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
 #                                   DiT Configs                                  #
 #################################################################################
 
-def DiT_S(image_size, patch_size, num_classes, **kwargs):
-    return DiT(image_size=image_size, patch_size=patch_size, hidden_size=384, depth=12, num_heads=6, num_classes=num_classes, **kwargs)
+def DiT_S(image_size, patch_size, in_channels, class_dropout_prob, num_classes, learn_sigma, **kwargs):
+    return DiT(image_size=image_size, patch_size=patch_size, in_channels=in_channels, hidden_size=384, depth=12, num_heads=6, 
+               class_dropout_prob=class_dropout_prob, num_classes=num_classes, learn_sigma=learn_sigma, **kwargs)
 
-def DiT_B(image_size, patch_size, num_classes, **kwargs):
-    return DiT(image_size=image_size, patch_size=patch_size, hidden_size=768, depth=12, num_heads=12, num_classes=num_classes, **kwargs)
+def DiT_B(image_size, patch_size, in_channels, class_dropout_prob, num_classes, learn_sigma, **kwargs):
+    return DiT(image_size=image_size, patch_size=patch_size,  in_channels=in_channels, hidden_size=768, depth=12, num_heads=12, 
+               class_dropout_prob=class_dropout_prob, num_classes=num_classes, learn_sigma=learn_sigma, **kwargs)
 
-def DiT_L(image_size, patch_size, num_classes, **kwargs):
-    return DiT(image_size=image_size, patch_size=patch_size, hidden_size=1024, depth=24, num_heads=16, num_classes=num_classes, **kwargs)
+def DiT_L(image_size, patch_size, in_channels, class_dropout_prob, num_classes, learn_sigma, **kwargs):
+    return DiT(image_size=image_size, patch_size=patch_size, in_channels=in_channels, hidden_size=1024, depth=24, num_heads=16, 
+               class_dropout_prob=class_dropout_prob, num_classes=num_classes, learn_sigma=learn_sigma, **kwargs)
 
-def DiT_XL(image_size, patch_size, num_classes, **kwargs):
-    return DiT(image_size=image_size, patch_size=patch_size, hidden_size=1152, depth=28, num_heads=16, num_classes=num_classes, **kwargs)
+def DiT_XL(image_size, patch_size, in_channels, class_dropout_prob, num_classes, learn_sigma, **kwargs):
+    return DiT(image_size=image_size, patch_size=patch_size, in_channels=in_channels, hidden_size=1152, depth=28, num_heads=16, 
+               class_dropout_prob=class_dropout_prob, num_classes=num_classes, learn_sigma=learn_sigma, **kwargs)
 
 DiT_models = {
     "DiT-S": DiT_S,
