@@ -123,10 +123,10 @@ class Block(nn.Module):
 class PatchEmbed(nn.Module):
     """ Image to Patch Embedding
     """
-    def __init__(self, patch_size, in_chans=3, embed_dim=768):
+    def __init__(self, patch_size, in_channels=3, embed_dim=768):
         super().__init__()
         self.patch_size = patch_size
-        self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size)
+        self.proj = nn.Conv2d(in_channels, embed_dim, kernel_size=patch_size, stride=patch_size)
 
     def forward(self, x):
         B, C, H, W = x.shape
@@ -136,15 +136,15 @@ class PatchEmbed(nn.Module):
 
 
 class UViT(nn.Module):
-    def __init__(self, image_size=224, patch_size=16, in_chans=3, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4.,
+    def __init__(self, image_size=224, patch_size=16, in_channels=3, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4.,
                  qkv_bias=False, qk_scale=None, norm_layer=nn.LayerNorm, mlp_time_embed=False, num_classes=-1,
                  use_checkpoint=False, conv=True, skip=True):
         super().__init__()
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
         self.num_classes = num_classes
-        self.in_chans = in_chans
+        self.in_channels = in_channels
 
-        self.patch_embed = PatchEmbed(patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim)
+        self.patch_embed = PatchEmbed(patch_size=patch_size, in_channels=in_channels, embed_dim=embed_dim)
         num_patches = (image_size // patch_size) ** 2
 
         self.time_embed = nn.Sequential(
@@ -178,9 +178,9 @@ class UViT(nn.Module):
             for _ in range(depth // 2)])
 
         self.norm = norm_layer(embed_dim)
-        self.patch_dim = patch_size ** 2 * in_chans
+        self.patch_dim = patch_size ** 2 * in_channels
         self.decoder_pred = nn.Linear(embed_dim, self.patch_dim, bias=True)
-        self.final_layer = nn.Conv2d(self.in_chans, self.in_chans, 3, padding=1) if conv else nn.Identity()
+        self.final_layer = nn.Conv2d(self.in_channels, self.in_channels, 3, padding=1) if conv else nn.Identity()
 
         trunc_normal_(self.pos_embed, std=.02)
         self.apply(self._init_weights)
@@ -225,7 +225,7 @@ class UViT(nn.Module):
         x = self.decoder_pred(x)
         assert x.size(1) == self.extras + L
         x = x[:, self.extras:, :]
-        x = unpatchify(x, self.in_chans)
+        x = unpatchify(x, self.in_channels)
         x = self.final_layer(x)
         return x
 
@@ -235,20 +235,20 @@ class UViT(nn.Module):
 
 # 2 for image 32*32, 4 for image 64*64, 4 for image 128*128, 16 for image 256*256
 
-def UViT_S(image_size, patch_size, num_classes, **kwargs):
-    return UViT(image_size=image_size, patch_size=patch_size, embed_dim=512, depth=13, num_heads=8, mlp_ratio=4, num_classes=num_classes, **kwargs)
+def UViT_S(image_size, patch_size, in_channels, num_classes, **kwargs):
+    return UViT(image_size=image_size, patch_size=patch_size, in_channels=in_channels, embed_dim=512, depth=13, num_heads=8, mlp_ratio=4, num_classes=num_classes, **kwargs)
 
-def UViT_S_D(image_size, patch_size, num_classes, **kwargs):
-    return UViT(image_size=image_size, patch_size=patch_size, embed_dim=512, depth=17, num_heads=8, mlp_ratio=4, num_classes=num_classes, **kwargs)
+def UViT_S_D(image_size, patch_size, in_channels, num_classes, **kwargs):
+    return UViT(image_size=image_size, patch_size=patch_size, in_channels=in_channels, embed_dim=512, depth=17, num_heads=8, mlp_ratio=4, num_classes=num_classes, **kwargs)
 
-def UViT_M(image_size, patch_size, num_classes, **kwargs):
-    return UViT(image_size=image_size, patch_size=patch_size, embed_dim=768, depth=17, num_heads=12, mlp_ratio=4, num_classes=num_classes, **kwargs)
+def UViT_M(image_size, patch_size, in_channels, num_classes, **kwargs):
+    return UViT(image_size=image_size, patch_size=patch_size, in_channels=in_channels, embed_dim=768, depth=17, num_heads=12, mlp_ratio=4, num_classes=num_classes, **kwargs)
 
-def UViT_L(image_size, patch_size, num_classes, **kwargs):
-    return UViT(image_size=image_size, patch_size=patch_size, embed_dim=1024, depth=21, num_heads=16, mlp_ratio=4, num_classes=num_classes, **kwargs)
+def UViT_L(image_size, patch_size, in_channels, num_classes, **kwargs):
+    return UViT(image_size=image_size, patch_size=patch_size, in_channels=in_channels, embed_dim=1024, depth=21, num_heads=16, mlp_ratio=4, num_classes=num_classes, **kwargs)
 
-def UViT_H(image_size, patch_size, num_classes, **kwargs):
-    return UViT(image_size=image_size, patch_size=patch_size, embed_dim=1152, depth=29, num_heads=16, mlp_ratio=4, num_classes=num_classes, **kwargs)
+def UViT_H(image_size, patch_size, in_channels, num_classes, **kwargs):
+    return UViT(image_size=image_size, patch_size=patch_size, in_channels=in_channels, embed_dim=1152, depth=29, num_heads=16, mlp_ratio=4, num_classes=num_classes, **kwargs)
 
 
 UViT_models = {
