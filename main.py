@@ -59,7 +59,7 @@ def parse_args():
     # Gaussian Diffusion
     parser.add_argument("--beta_schedule", type=str, default='optim_2', help="Beta schedule type: 'linear', 'cosine', or 'optim_k' where k is a positive integer.")
     parser.add_argument("--beta_1", type=float, default=1e-4, help="Starting value of beta for the diffusion process")
-    parser.add_argument("--beta_T", type=float, default=0.2, help="Ending value of beta for the diffusion process")
+    parser.add_argument("--beta_T", type=float, default=0.02, help="Ending value of beta for the diffusion process")
     parser.add_argument("--T", type=int, default=1000, help="Number of diffusion steps")
     parser.add_argument("--mean_type", type=str, default='EPSILON', choices=['PREVIOUS_X', 'START_X', 'EPSILON', 'VELOCITY'], help="Predict variable")
     parser.add_argument("--var_type", type=str, default='FIXED_LARGE', choices=['FIXED_LARGE', 'FIXED_SMALL', 'LEARNED', 'LEARNED_RANGE'], help="Variance type")
