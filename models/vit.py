@@ -16,14 +16,14 @@ from timm.models.registry import register_model
 from copy import deepcopy
 from timm.models.vision_transformer import Attention, Mlp, PatchEmbed
 
-def _cfg(url='', **kwargs):
-    return {
-        'url': url,
-        'num_classes': 1000, 'input_size': (3, 224, 224), 'pool_size': None,
-        'crop_pct': .9, 'interpolation': 'bicubic',
-        'mean': (0.5, 0.5, 0.5), 'std': (0.5, 0.5, 0.5),
-        **kwargs
-    }
+# def _cfg(url='', **kwargs):
+#     return {
+#         'url': url,
+#         'num_classes': 1000, 'input_size': (3, 224, 224), 'pool_size': None,
+#         'crop_pct': .9, 'interpolation': 'bicubic',
+#         'mean': (0.5, 0.5, 0.5), 'std': (0.5, 0.5, 0.5),
+#         **kwargs
+#     }
 
 
 # def convert_module_to_f32(l):
@@ -44,8 +44,7 @@ def _cfg(url='', **kwargs):
 #         l.weight.data = l.weight.data.half()
 #         if l.bias is not None:
 #             l.bias.data = l.bias.data.half()
-
-
+    
 class DropPath(nn.Module):
     """Drop paths (Stochastic Depth) per sample  (when applied in main path of residual blocks).
     """
@@ -313,7 +312,6 @@ class ViT(nn.Module):
         self.image_size = image_size
         self.use_conv_last = use_conv_last
         self.drop_label_prob = drop_label_prob
-        #self.classifier_free_scale = classifier_free_scale
         self.patch_embed = PatchEmbed(
             image_size=image_size, patch_size=patch_size, in_channels=in_channels, embed_dim=embed_dim)
         num_patches = self.patch_embed.num_patches
@@ -352,6 +350,8 @@ class ViT(nn.Module):
         
         output_channels = self.out_dim * patch_size ** 2
         self.linear_projection = nn.Linear(embed_dim, output_channels)
+        # self.linear_projection = GradientBNLayer(embed_dim, output_channels)
+        
         self.to_pixel = nn.Conv2d(self.out_dim, self.out_dim, kernel_size=3, stride=1, padding=1) if self.use_conv_last else None
 
         if self.pos_embed is not None:
@@ -375,9 +375,11 @@ class ViT(nn.Module):
         
         # timestep embedding
         self.time_embedding = nn.Embedding(num_steps, embed_dim)
-
+        # self.time_embedding = RandomFourierTimeEmbedding(num_steps, embed_dim)
         self.dtype = torch.float16 if use_fp16 else torch.float32
-
+        
+        # self.time_weights = nn.Parameter(torch.ones(embed_dim))  # [C]
+        
     def fix_init_weight(self):
         def rescale(param, layer_id):
             param.div_(math.sqrt(2.0 * layer_id))
@@ -441,13 +443,11 @@ class ViT(nn.Module):
         return labels
     
     def forward_features(self, x, timesteps, y=None, force_drop_ids=None):
-        
         x = self.patch_embed(x)
         B, L, C = x.size()
-        
         timesteps = timesteps.long() #ensure timesteps are longtensor
-        time_tokens = self.time_embedding(timesteps).unsqueeze(1)
-
+        time_tokens = self.time_embedding(timesteps).unsqueeze(1) # [B, 1, C]
+        
         if y is not None:
             use_dropout = self.drop_label_prob > 0 and self.training
             if use_dropout or (force_drop_ids is not None):
@@ -455,8 +455,8 @@ class ViT(nn.Module):
             cls_tokens = self.class_embedding(y).unsqueeze(1)
             x = torch.cat((time_tokens, cls_tokens, x), dim=1)
         else:
-            x = torch.cat((time_tokens, x), dim=1)
-
+            x = torch.cat((time_tokens, x), dim=1)  
+        
         if self.pos_embed is not None:
             x = x + self.pos_embed
         x = self.pos_drop(x)
@@ -465,7 +465,7 @@ class ViT(nn.Module):
         x = x.type(self.dtype)
         for blk in self.blocks:
             x = blk(x, rel_pos_bias=rel_pos_bias)
-
+    
         x = self.norm(x)
         return x
 
@@ -478,6 +478,7 @@ class ViT(nn.Module):
         x = self.linear_projection(x[:, self.num_extra_tokens:, :])
 
         p = self.patch_size
+        
         h = w = int(x.shape[1]**.5)
         assert h * w == x.shape[1]
         
@@ -492,6 +493,7 @@ class ViT(nn.Module):
 
     def forward_with_cfg(self, x, timesteps, y=None, classifier_free_scale=1.0):
         input_dtype = x.dtype
+        #x = self.scale(x, timesteps)
         # import pdb; pdb.set_trace()
         half = x[: len(x) // 2]
         combined = torch.cat((half, half), dim=0)
