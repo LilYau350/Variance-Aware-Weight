@@ -47,33 +47,37 @@ def parse_args():
     # Enable/Disable Training and Evaluation
     parser.add_argument("--train", default=True, type=str2bool, help="Enable training")
     parser.add_argument("--eval", default=True, type=str2bool, help="Load checkpoint and evaluate FID...")
+
     parser.add_argument("--data_dir", type=str, default='./data', help="Path to the dataset directory")
-    parser.add_argument("--dataset", type=str, default='CIFAR-10', choices=['CIFAR-10', 'CelebA', 'ImageNet', 'LSUN', 'Encoded_ImageNet'], help="Dataset to train on")
+    parser.add_argument("--dataset", type=str, default='CIFAR-10', choices=['CIFAR-10', 'Gaussian', 'CelebA', 'ImageNet', 'LSUN', 'Encoded_ImageNet'], help="Dataset to train on")
     parser.add_argument("--patch_size", type=int, default=None, help="Patch Size for ViT, DiT, U-ViT, type is int")
     parser.add_argument("--in_chans", type=int, default=3, help="Number of input channels for the model")
     parser.add_argument("--image_size", type=int, default=32, help="Image size")
-    parser.add_argument("--num_classes", type=int, default=10, help="Number of classes, type is int")
+    parser.add_argument("--num_classes", type=int, default=0, help="Number of classes, type is int")
     parser.add_argument("--model", type=str, default="ADM-32", choices=model_variants, help="Model variant to use")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
-    
+
     # Gaussian Diffusion
-    parser.add_argument("--beta_schedule", type=str, default='optim_2', help="Beta schedule type: 'linear', 'cosine', or 'optim_k' where k is a positive integer.")
+    parser.add_argument("--beta_schedule", type=str, default='cosine', help="Beta schedule type 'linear', 'cosine' and 'power'.")
+    parser.add_argument("--p", type=float, default=2, help="power for power schedule.")
     parser.add_argument("--beta_1", type=float, default=1e-4, help="Starting value of beta for the diffusion process")
     parser.add_argument("--beta_T", type=float, default=0.02, help="Ending value of beta for the diffusion process")
     parser.add_argument("--T", type=int, default=1000, help="Number of diffusion steps")
     parser.add_argument("--mean_type", type=str, default='EPSILON', choices=['PREVIOUS_X', 'START_X', 'EPSILON', 'VELOCITY'], help="Predict variable")
     parser.add_argument("--var_type", type=str, default='FIXED_LARGE', choices=['FIXED_LARGE', 'FIXED_SMALL', 'LEARNED', 'LEARNED_RANGE'], help="Variance type")
-    parser.add_argument("--loss_type", type=str, default='MAPPED_MSE', choices=['MAPPED_MSE', 'MIXED', 'MSE', 'L1', 'RESCALED_MSE', 'KL', 'RESCALED_KL'], help="Loss type")
-    parser.add_argument("--weight_type", type=str, default='constant', help="'constant', 'min_snr_k','vmin_snr_k', 'max_snr_k' where k is a positive integer.")
+    parser.add_argument("--loss_type", type=str, default='MSE', choices=['MSE', 'RESCALED_MSE', 'KL', 'RESCALED_KL'], help="Loss type")
+    parser.add_argument("--weight_type", type=str, default='constant', help="'constant', 'lambda', 'min_snr_k','vmin_snr_k', 'max_snr_k' 'debias', where k is a positive integer.")
+    parser.add_argument("--mapping", type=str2bool, default=False, help="Enable mapped MSE loss (default: False)")
 
     # Training
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     parser.add_argument('--betas', type=float, nargs=2, default=(0.9, 0.999), help='Beta values for optimization')
     parser.add_argument("--weight_decay", type=float, default=0.0, help="Weight decay for the optimizer")
-    parser.add_argument("--final_lr", type=float, default=1e-5, help="Final learning rate")
+    parser.add_argument("--eps", type=float, default=1e-8, help="eps for the optimizer")
+    parser.add_argument("--final_lr", type=float, default=0.0, help="Final learning rate")
     parser.add_argument("--grad_clip", type=float, default=None, help="Gradient norm clipping")
     parser.add_argument("--dropout", type=float, default=0.1, help='Dropout rate of resblock')
-    parser.add_argument('--drop_label_prob', type=float, default=0.1, help='Probability of dropping labels for classifier-free guidance')
+    parser.add_argument('--drop_label_prob', type=float, default=0.0, help='Probability of dropping labels for classifier-free guidance')
     parser.add_argument("--total_steps", type=int, default=400000, help="Total training steps")
     parser.add_argument("--warmup_steps", type=int, default=5000, help="Learning rate warmup")
     parser.add_argument("--batch_size", type=int, default=128, help="Batch size for training")
@@ -82,27 +86,27 @@ def parse_args():
     parser.add_argument("--ema_decay", type=float, default=0.9999, help="EMA decay rate")
     parser.add_argument('--sampler_type', type=str, default='uniform', choices=['uniform', 'loss-second-moment'], help='Type of schedule sampler to use')
     parser.add_argument("--cosine_decay", default=True, type=str2bool, help="Whether to use cosine learning rate decay")
-    parser.add_argument("--class_cond", default=True, type=str2bool, help="Set class_cond to enable class-conditional generation.")
+    parser.add_argument("--class_cond", default=False, type=str2bool, help="Set class_cond to enable class-conditional generation.")
     parser.add_argument("--learn_sigma", default=False, type=str2bool, help="Set learn_sigma to enable learn distribution sigma.")
     parser.add_argument("--parallel", default=True, type=str2bool, help="Use multi-GPU training")
-    parser.add_argument('--amp', default=False, type=str2bool, help='Use AMP for mixed precision training')
+    parser.add_argument('--amp', default=True, type=str2bool, help='Use AMP for mixed precision training')
     parser.add_argument('--resume', type=str, default=None, help='Path to the checkpoint to resume from')
-    
+
     # Logging & Sampling
     parser.add_argument("--sampler", type=str, default="heun", choices=["ddim", "heun"], help="Choose sampler between 'ddim' and 'heun'")
-    parser.add_argument("--sample_timesteps", type=int, default=10, help="Number of sample diffusion steps")
+    parser.add_argument("--sample_timesteps", type=int, default=18, help="Number of sample diffusion steps")
     parser.add_argument("--logdir", type=str, default='./logs', help="Log directory")
     parser.add_argument("--sample_size", type=int, default=64, help="Sampling size of images")
     parser.add_argument("--sample_step", type=int, default=10000, help="Frequency of sampling")
     parser.add_argument("--use_classifier", type=str, default=None, help="Path to the pre-trained classifier model")
-    parser.add_argument('--guidance_scale', type=float, default=1.5, help='Scale factor for classifier-free guidance')
-    parser.add_argument('--eps_scaler', type=float, default=1.000, help='Scale factor for eps_scaler')
-    
+    parser.add_argument('--guidance_scale', type=float, default=1.0, help='Scale factor for classifier-free guidance')
+
+
     # Evaluation
     parser.add_argument("--save_step", type=int, default=100000, help="Frequency of saving checkpoints, 0 to disable during training")
     parser.add_argument("--eval_step", type=int, default=50000, help="Frequency of evaluating model, 0 to disable during training")
     parser.add_argument("--num_samples", type=int, default=50000, help="The number of generated images for evaluation")
-    parser.add_argument("--fid_cache", type=str, default='./stats/fid_stats_cifar_train.npz', help="FID cache")
+    parser.add_argument("--fid_cache", type=str, default='./reference_batches/fid_stats_cifar_train.npz', help="FID cache")
 
     args = parser.parse_args()    
     return args
@@ -124,7 +128,8 @@ def get_lr_lambda(args):
 
 def save_checkpoint(args, step, model, optimizer, ema_model=None):
     if dist_util.is_main_process():
-        checkpoint_dir = 'checkpoint'
+        # condition_type = 'supervised' if args.class_cond else 'unsupervised'
+        checkpoint_dir = os.path.join('checkpoint', args.dataset, args.model)
         os.makedirs(checkpoint_dir, exist_ok=True)
         state = {
             'model': model.state_dict(),
@@ -133,10 +138,10 @@ def save_checkpoint(args, step, model, optimizer, ema_model=None):
         }
         if ema_model is not None:
             state['ema_model'] = ema_model.state_dict()
-        filename = f"{args.loss_type}_{args.beta_schedule}"
+        filename = f"{args.mean_type}_{args.weight_type}_{args.beta_schedule}"
         
-        if args.beta_schedule == "optim":
-            filename += f"_{args.k}"
+        if args.beta_schedule == "power":
+            filename += f"_{args.p}"
             
         filename += f"_{step}.pth"
         filename = os.path.join(checkpoint_dir, filename)
@@ -159,26 +164,26 @@ def load_checkpoint(ckpt_path, model=None, optimizer=None, ema_model=None):
 def build_dataset(args):
     if args.dataset == 'CIFAR-10':
         image_size = args.image_size or 32
-        train_loader, test_loader, input_channels, image_size = load_dataset(
+        train_loader, test_loader = load_dataset(
             args.data_dir, args.dataset, args.batch_size, image_size, num_workers=args.num_workers, shuffle=not args.parallel)
     elif args.dataset == 'CelebA':
         image_size = args.image_size or 64
-        train_loader, test_loader, input_channels, image_size = load_dataset(
-            args.data_dir, 'CelebA', args.batch_size, image_size, num_workers=args.num_workers, shuffle=not args.parallel)
+        train_loader, test_loader = load_dataset(
+            args.data_dir,  args.dataset, args.batch_size, image_size, num_workers=args.num_workers, shuffle=not args.parallel)
     elif args.dataset == 'ImageNet':
         if args.image_size not in [64, 128, 256]:
             raise ValueError("Image size for ImageNet must be one of [64, 128, 256]")
         image_size = args.image_size
-        train_loader, test_loader, input_channels, image_size = load_dataset(
+        train_loader, test_loader = load_dataset(
             args.data_dir, args.dataset, args.batch_size, image_size, num_workers=args.num_workers, shuffle=not args.parallel)
     elif args.dataset == 'LSUN':
         image_size = args.image_size or 256
-        train_loader, test_loader, input_channels, image_size = load_dataset(
+        train_loader, test_loader = load_dataset(
             args.data_dir, args.dataset, args.batch_size, image_size, num_workers=args.num_workers, shuffle=not args.parallel)
     elif args.dataset == 'Encoded_ImageNet':
         image_size = args.image_size or 32  # Assuming encoded ImageNet is 32x32
-        train_loader, test_loader, input_channels, image_size = load_dataset(
-            args.data_dir, 'Encoded_ImageNet', args.batch_size, image_size, num_workers=args.num_workers, shuffle=not args.parallel)
+        train_loader, test_loader = load_dataset(
+            args.data_dir, args.dataset, args.batch_size, image_size, num_workers=args.num_workers, shuffle=not args.parallel)
     else:
         raise ValueError(f"Unsupported dataset: {args.dataset}")
     
@@ -221,10 +226,12 @@ def build_model(args):
     if any(x in args.model for x in ["UNet", "ADM", "LDM"]):
         model = model_dict[args.model](num_classes=args.num_classes, in_channels=args.in_chans, 
                                        drop_label_prob=args.drop_label_prob, dropout=args.dropout, 
-                                       learn_sigma=args.learn_sigma, class_cond=args.class_cond)
+                                       learn_sigma=args.learn_sigma, class_cond=args.class_cond,)
+        
     elif "U-ViT" in args.model:
         model = model_dict[args.model](image_size=args.image_size, patch_size=args.patch_size,
-                                       in_channels=args.in_chans, num_classes=args.num_classes)        
+                                       in_channels=args.in_chans, num_classes=args.num_classes) 
+               
     elif "ViT" in args.model:
         model = model_dict[args.model](image_size=args.image_size, patch_size=args.patch_size,
                                        num_classes=args.num_classes, in_channels=args.in_chans,
@@ -234,13 +241,14 @@ def build_model(args):
     elif "DiT" in args.model:
         model = model_dict[args.model](image_size=args.image_size, patch_size=args.patch_size,
                                        in_channels=args.in_chans, num_classes=args.num_classes,
-                                       learn_sigma=args.learn_sigma)
+                                       learn_sigma=args.learn_sigma,
+                                       class_dropout_prob=args.drop_label_prob)
     
     return model
 
 def build_diffusion(args, use_ddim=False):
 
-    betas = get_named_beta_schedule(args.beta_schedule, args.T)
+    betas = get_named_beta_schedule(args.beta_schedule, args.T, args.p)
     
     if use_ddim and args.sample_timesteps < args.T:  
         # Use DDIM and specify the number of sampling steps.
@@ -254,7 +262,9 @@ def build_diffusion(args, use_ddim=False):
         model_var_type=ModelVarType[args.var_type.upper()],
         loss_type=LossType[args.loss_type.upper()],
         rescale_timesteps=True,
-        mse_loss_weight_type=args.weight_type
+        mse_loss_weight_type=args.weight_type,
+        mapping=args.mapping,
+        # gamma=args.gamma,
     )
 
     if use_ddim:
@@ -292,16 +302,16 @@ def save_metrics_to_csv(args, eval_dir, metrics, step):
         f"{args.dataset}_{args.model}_"
         + (f"patch_{args.patch_size}_" if args.patch_size else "")
         + f"lr_{args.lr}_"  
+        + (f"lr_decay_{args.cosine_decay}_" if args.cosine_decay else "")        
         + f"dropout_{args.dropout}_"
         + f"drop_label_{args.drop_label_prob}_"
         + f"sample_t_{args.sample_timesteps}_"
         + f"cfg_{args.guidance_scale}_"
-        + f"beta_sched_{args.beta_schedule}_"
-        + f"loss_{args.loss_type}_"
+        + f"beta_sched_{args.beta_schedule}_" + (f"{args.p}_" if args.beta_schedule == 'power' else "")
+        + f"target_{args.mean_type}_"
         + f"weight_{args.weight_type}_"  
-        + (f"gradclip_{args.grad_clip}_" if args.grad_clip else "")
         + ("cond_" if args.class_cond else "")
-    )
+        )
 
     params = re.sub(r'[^\w\-_\. ]', '_', params).rstrip('_')
 
@@ -330,21 +340,24 @@ def sample_and_save(args, step, device, eval_model, sample_diffusion, save_grid=
     if dist_util.is_main_process():
         arr = np.concatenate(all_samples, axis=0)
         arr = arr[: args.num_samples if not save_grid else args.sample_size]    
-
+        #condition_type = 'supervised' if args.class_cond else 'unsupervised'
+        
         if save_grid:
-            # Save as grid image if `save_grid` is True
+            # Save as grid image if 'save_grid' is True
             torch_samples = torch.from_numpy(arr).permute(0, 3, 1, 2).float() / 255.0
-            grid = make_grid(torch_samples, pad_value=0.5) 
+            grid = make_grid(torch_samples, pad_value=0.5)
             sample_dir = os.path.join(args.logdir, args.dataset, 'sample')
             os.makedirs(sample_dir, exist_ok=True)
             path = os.path.join(sample_dir, f'{step}.png')
             save_image(grid, path)
         else:
             # Save for evaluation purposes
-            sample_dir = os.path.join(args.logdir, args.dataset, 'generate_sample')
+            # sample_dir = os.path.join(args.logdir, args.dataset, 'generate_sample', f"{args.mean_type}_{condition_type}",)
+            sample_dir = os.path.join(args.logdir, args.dataset, 'generate_sample', args.mean_type)
             os.makedirs(sample_dir, exist_ok=True)
             shape_str = "x".join([str(x) for x in arr.shape[1:3]])
-            out_path = os.path.join(sample_dir, f"{args.dataset}_{shape_str}_samples.npz")
+            p = f"_{args.p}" if args.beta_schedule == "power" else ''
+            out_path = os.path.join(sample_dir, f"{args.dataset}_{shape_str}_{args.model}_{args.weight_type}_{args.beta_schedule}{p}_samples.npz")
             
             if args.class_cond:
                 label_arr = np.concatenate(all_labels, axis=0)[: args.num_samples]
@@ -374,12 +387,10 @@ def calculate_metrics(args, step, device, eval_model, sample_diffusion, evaluato
 
 def eval(args, **kwargs):
     device, model, ema_model, sample_diffusion, evaluator, ref_stats, eval_dir, step = (
-        kwargs['device'], kwargs['model'], kwargs['ema_model'],
-        kwargs['sample_diffusion'], kwargs['evaluator'], kwargs['ref_stats'],
-        kwargs['eval_dir'], kwargs['step']
-    )
+        kwargs['device'], kwargs['model'], kwargs['ema_model'], kwargs['sample_diffusion'], 
+        kwargs['evaluator'], kwargs['ref_stats'], kwargs['eval_dir'], kwargs['step'])
     # Evaluate net_model and ema_model
-    # net_is_score, net_fid = calculate_metrics(args, step, device, model, sample_diffusion,  evaluator, ref_stats)
+    # net_is_score, net_fid = calculate_metrics(args, step, device, model, sample_diffusion, evaluator, ref_stats)
     # if dist_util.is_main_process():
     #     print(f"Model(NET): IS:{net_is_score:.3f}, FID:{net_fid:.3f}")
     ema_is_score, ema_fid = calculate_metrics(args, step, device, ema_model, sample_diffusion, evaluator, ref_stats)
@@ -397,8 +408,9 @@ def eval(args, **kwargs):
                 
 def train(args, **kwargs):
     
-    model, ema_model, checkpoint, diffusion, sample_diffusion, train_loader, optimizer, scheduler, evaluator, ref_stats, eval_dir, device = (
-        kwargs['model'], kwargs['ema_model'], kwargs['checkpoint'],
+    model, ema_model, checkpoint, diffusion, sample_diffusion, train_loader, optimizer, scheduler, \
+    evaluator, ref_stats, eval_dir, device = (
+        kwargs['model'], kwargs['ema_model'], kwargs['checkpoint'], 
         kwargs['diffusion'], kwargs['sample_diffusion'], kwargs['train_loader'],
         kwargs['optimizer'], kwargs['scheduler'], kwargs['evaluator'],
         kwargs['ref_stats'], kwargs['eval_dir'], kwargs['device']
@@ -420,8 +432,7 @@ def train(args, **kwargs):
         trainer = Trainer(args, device, model, ema_model, optimizer, scheduler, diffusion, train_loader, start_step, pbar)
         for step in range(start_step + 1, args.total_steps + 1):
             
-            loss = trainer.train_step(step)
-                    
+            loss = trainer.train_step(step)      
             # Sample and save images
             if args.sample_step > 0 and step % args.sample_step == 0:
                 sample_and_save(args, step, device, ema_model, sample_diffusion, save_grid=True)
@@ -436,8 +447,9 @@ def train(args, **kwargs):
             
             # Evaluate
             if args.eval and args.eval_step > 0 and step % args.eval_step == 0 and step > 0:
-                eval(args, **{**kwargs, 'step': step})        
- 
+                eval(args, **{**kwargs, 'step': step})      
+
+            
 def init(args):
     if args.parallel:
         dist_util.setup_dist()  
@@ -448,6 +460,9 @@ def init(args):
         
     set_random_seed(args, args.seed)
     train_loader, _ = build_dataset(args)
+    
+    diffusion = build_diffusion(args, use_ddim=False)
+    sample_diffusion = build_diffusion(args, use_ddim=True)    
     
     if args.eval and not args.train:
         ema_model = build_model(args).to(device)
@@ -464,7 +479,8 @@ def init(args):
             ema_model = DDP(ema_model, device_ids=[local_rank], output_device=local_rank)
 
     if args.train:
-        optimizer = optim.AdamW(model.parameters(), lr=args.lr, betas=args.betas, weight_decay=args.weight_decay)
+        optimizer = optim.AdamW(model.parameters(), lr=args.lr, betas=args.betas, weight_decay=args.weight_decay, eps=args.eps)
+        # optimizer = SGDF(model.parameters(), lr=args.lr, betas=args.betas, weight_decay=args.weight_decay)
         scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=get_lr_lambda(args))
     else:
         optimizer = None
@@ -479,9 +495,6 @@ def init(args):
     else:
         checkpoint = None
         step = 0
-
-    diffusion = build_diffusion(args, use_ddim=False)
-    sample_diffusion = build_diffusion(args, use_ddim=True)
 
     config = tf.ConfigProto(allow_soft_placement=True)
     config.gpu_options.allow_growth = True
@@ -499,9 +512,9 @@ def init(args):
         dist.barrier()
 
     return {
-        'device': device, 'train_loader': train_loader, 'model': model, 'ema_model': ema_model, 'checkpoint': checkpoint,
-        'diffusion': diffusion, 'sample_diffusion': sample_diffusion, 'optimizer': optimizer, 'scheduler': scheduler,
-        'evaluator': evaluator, 'ref_stats': ref_stats, 'eval_dir': eval_dir, 'step': step }
+        'device': device, 'train_loader': train_loader, 'model': model, 'ema_model': ema_model, 
+        'checkpoint': checkpoint,'diffusion': diffusion, 'sample_diffusion': sample_diffusion, 'optimizer': optimizer, 
+        'scheduler': scheduler,'evaluator': evaluator, 'ref_stats': ref_stats, 'eval_dir': eval_dir, 'step': step }
 
 def main():
     args = parse_args()
