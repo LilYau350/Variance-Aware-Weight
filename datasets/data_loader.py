@@ -15,6 +15,7 @@ Image.MAX_IMAGE_PIXELS = None
 PngImagePlugin.MAX_TEXT_CHUNK = 1024 * (2 ** 20)  # 1024MB
 PngImagePlugin.MAX_TEXT_MEMORY = 128 * (2 ** 20)  # 128MB
 
+    
 # Helper functions for cropping
 def center_crop_arr(pil_image, image_size):
     while min(*pil_image.size) >= 2 * image_size:
@@ -31,7 +32,6 @@ def center_crop_arr(pil_image, image_size):
     crop_y = (arr.shape[0] - image_size) // 2
     crop_x = (arr.shape[1] - image_size) // 2
     return arr[crop_y: crop_y + image_size, crop_x: crop_x + image_size]
-
 
 def random_crop_arr(pil_image, image_size, min_crop_frac=0.8, max_crop_frac=1.0):
     min_smaller_dim_size = math.ceil(image_size / max_crop_frac)
@@ -80,29 +80,14 @@ class EncodedImageNet(Dataset):
             img = np.flip(img, axis=2)  # Flip horizontally across width axis
 
         # Convert NumPy array to PyTorch tensor
-        img = torch.tensor(img, dtype=torch.float32)
+        # img = torch.tensor(img, dtype=torch.float32)
+        img = torch.tensor(img.copy(), dtype=torch.float32)
 
         return img, label
 
-# ImageNet Dataset
-def load_imagenet(data_dir, image_size, random_crop, random_flip):
-    transform = transforms.Compose([
-        transforms.Lambda(lambda img: img if img.size == (image_size, image_size) else (
-            random_crop_arr(img, image_size) if random_crop else center_crop_arr(img, image_size))
-        ),
-        transforms.RandomHorizontalFlip() if random_flip else transforms.Lambda(lambda x: x),
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-    ])
-    
-    train_dataset = datasets.ImageFolder(root=f"{data_dir}/train", transform=transform)
-    val_dataset = datasets.ImageFolder(root=f"{data_dir}/val", transform=transform)
-
-    return train_dataset, val_dataset
 
 # CIFAR10 Dataset
-def load_cifar10(data_dir, image_size, random_crop, random_flip):
-
+def load_cifar10(data_dir, image_size, random_crop, random_flip,):
     
     transform = transforms.Compose([
         transforms.Lambda(lambda img: img if img.size == (image_size, image_size) else (
@@ -126,7 +111,26 @@ def load_cifar10(data_dir, image_size, random_crop, random_flip):
     return train_dataset, test_dataset
 
 # CelebA Dataset Loader
-def load_celebA(data_dir, image_size, random_crop, random_flip):
+def load_celebA(data_dir, image_size, random_crop, random_flip,):
+    
+    transform = transforms.Compose([
+        transforms.Lambda(lambda img: img if img.size == (image_size, image_size) else (
+            random_crop_arr(img, image_size) if random_crop else center_crop_arr(img, image_size))
+        ),
+        transforms.RandomHorizontalFlip() if random_flip else transforms.Lambda(lambda x: x),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        # transforms.Normalize((0.524, 0.415, 0.359), (0.293, 0.260, 0.252)),
+    ])
+
+    train_dataset = datasets.ImageFolder(root=f"{data_dir}/train", transform=transform)
+    val_dataset = datasets.ImageFolder(root=f"{data_dir}/val", transform=transform)
+    
+    return train_dataset, val_dataset
+
+# ImageNet Dataset Loader
+def load_imagenet(data_dir, image_size, random_crop, random_flip,):
+    
     transform = transforms.Compose([
         transforms.Lambda(lambda img: img if img.size == (image_size, image_size) else (
             random_crop_arr(img, image_size) if random_crop else center_crop_arr(img, image_size))
@@ -135,15 +139,23 @@ def load_celebA(data_dir, image_size, random_crop, random_flip):
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
-
+    
     train_dataset = datasets.ImageFolder(root=f"{data_dir}/train", transform=transform)
-    # Returns an empty TensorDataset as a testset
     val_dataset = datasets.ImageFolder(root=f"{data_dir}/val", transform=transform)
+
+    return train_dataset, val_dataset
+
+# HDF5 Encoded ImageNet Loader
+def load_encoded_imagenet(data_dir, image_size, random_flip):
+    h5_file = os.path.join(data_dir, 'ImageNet.h5')
+    train_dataset = EncodedImageNet(h5_file=h5_file, dataset_type='train', image_size=image_size, random_flip=random_flip)
+    val_dataset = EncodedImageNet(h5_file=h5_file, dataset_type='val', image_size=image_size, random_flip=random_flip)
     
     return train_dataset, val_dataset
 
-# LSUN Bedroom Dataset
-def load_lsun_bedroom(data_dir, image_size, random_crop, random_flip):
+# LSUN Bedroom Dataset Loader
+def load_lsun_bedroom(data_dir, image_size, random_crop, random_flip,):
+    
     transform = transforms.Compose([
         transforms.Lambda(lambda img: img if img.size == (image_size, image_size) else (
             random_crop_arr(img, image_size) if random_crop else center_crop_arr(img, image_size))
@@ -158,41 +170,22 @@ def load_lsun_bedroom(data_dir, image_size, random_crop, random_flip):
 
     return train_dataset, val_dataset
 
-# HDF5 Encoded ImageNet Loader
-def load_encoded_imagenet(data_dir, image_size, random_flip):
-    h5_file = os.path.join(data_dir, 'ImageNet.h5')
-    train_dataset = EncodedImageNet(h5_file=h5_file, dataset_type='train', image_size=image_size, random_flip=random_flip)
-    val_dataset = EncodedImageNet(h5_file=h5_file, dataset_type='val', image_size=image_size, random_flip=random_flip)
-    
-    return train_dataset, val_dataset
-
 # Unified Dataset Loader
 def load_dataset(data_dir, dataset_name, batch_size=128, image_size=None, random_crop=False, random_flip=True, num_workers=4, shuffle=True):
     if dataset_name == 'CIFAR-10':
-        train_dataset, test_dataset = load_cifar10(data_dir, image_size, random_crop, random_flip)
-        input_channels = 3
-        image_size = 32 if image_size is None else image_size
-        
+        train_dataset, test_dataset = load_cifar10(data_dir, image_size, random_crop, random_flip,)   
+          
     elif dataset_name == 'CelebA':
-        train_dataset, test_dataset = load_celebA(data_dir, image_size, random_crop, random_flip)
-        input_channels = 3
-        image_size = 64 if image_size is None else image_size
+        train_dataset, test_dataset = load_celebA(data_dir, image_size, random_crop, random_flip,)
     
     elif dataset_name == 'ImageNet':
-        if image_size not in [64, 128, 256]:
-            raise ValueError("ImageNet's image size must be one of 64, 128, or 256.")
-        train_dataset, test_dataset = load_imagenet(data_dir, image_size, random_crop, random_flip)
-        input_channels = 3
-
-    elif dataset_name == 'LSUN_Bedroom':
-        train_dataset, test_dataset = load_lsun_bedroom(data_dir, image_size, random_crop, random_flip)
-        input_channels = 3
-        image_size = 256 if image_size is None else image_size
+        train_dataset, test_dataset = load_imagenet(data_dir, image_size, random_crop, random_flip,)
         
     elif dataset_name == 'Encoded_ImageNet':
         train_dataset, test_dataset = load_encoded_imagenet(data_dir, image_size, random_flip)
-        input_channels = 4  # 32x32x4 encoded ImageNet dataset
-        image_size = 32 if image_size is None else image_size
+            
+    elif dataset_name == 'LSUN_Bedroom':
+        train_dataset, test_dataset = load_lsun_bedroom(data_dir, image_size, random_crop, random_flip,)
         
     else:
         raise ValueError("Unsupported dataset")
@@ -200,4 +193,4 @@ def load_dataset(data_dir, dataset_name, batch_size=128, image_size=None, random
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, drop_last=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, drop_last=True)
 
-    return train_loader, test_loader, input_channels, image_size
+    return train_loader, test_loader
