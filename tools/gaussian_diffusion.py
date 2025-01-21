@@ -15,7 +15,7 @@ from tools.nn import mean_flat
 from tools.losses import normal_kl, discretized_gaussian_log_likelihood
 from tools import logger
 
-def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
+def get_named_beta_schedule(schedule_name, num_diffusion_timesteps, power):
     """
     Get a pre-defined beta schedule for the given name.
 
@@ -38,14 +38,13 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
             num_diffusion_timesteps,
             lambda t: math.cos((t + 0.008) / 1.008 * math.pi / 2) ** 2,
         )
-    elif "optim" in schedule_name:
-        k = float(schedule_name.split("optim_")[-1])
+    elif schedule_name == "power":
         # Optimal schedule
         scale = 1000 / num_diffusion_timesteps
         beta_start = scale * 0.0001
         beta_end = scale * 0.02
         t = np.linspace(0, num_diffusion_timesteps - 1, num_diffusion_timesteps)
-        beta_t = beta_start + (beta_end - beta_start) * ((t) / (num_diffusion_timesteps)) ** k
+        beta_t = beta_start + (beta_end - beta_start) * ((t) / (num_diffusion_timesteps)) ** power
         return beta_t
     else:
         raise NotImplementedError(f"unknown beta schedule: {schedule_name}")
@@ -70,44 +69,62 @@ def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
         betas.append(min(1 - alpha_bar(t2) / alpha_bar(t1), max_beta))
     return np.array(betas)
 
+
+# def compute_alpha_sigma(betas, t):
+#     """
+#     Compute alpha and sigma for a batch of timesteps.
+
+#     :param betas: A numpy array of betas for the diffusion process.
+#     :param t_indices: A numpy array of shape (batch_size,) representing timesteps for each sample in the batch.
+#     :return: Tuple of (alpha, sigma) for the given timesteps, each of shape (batch_size,).
+#     """
+#     alphas = 1.0 - betas  # Compute alphas
+#     alphas_cumprod = np.cumprod(alphas)  # Compute cumulative product of alphas
+
+#     # Fetch values corresponding to timesteps in t_indices
+#     alpha = np.sqrt(alphas_cumprod[t])  # Compute sqrt(alphas_cumprod) for t_indices
+#     sigma = np.sqrt(1.0 - alphas_cumprod[t])  # Compute sqrt(1 - alphas_cumprod) for t_indices
+    
+#     return alpha, sigma
+
 # --------------------------------------------------
-def get_snr(steps=100):
-    def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
-        """
-        Create a beta schedule that discretizes the given alpha_t_bar function,
-        which defines the cumulative product of (1-beta) over time from t = [0,1].
-        :param num_diffusion_timesteps: the number of betas to produce.
-        :param alpha_bar: a lambda that takes an argument t from 0 to 1 and
-                          produces the cumulative product of (1-beta) up to that
-                          part of the diffusion process.
-        :param max_beta: the maximum beta to use; use values lower than 1 to
-                         prevent singularities.
-        """
-        betas = []
-        for i in range(num_diffusion_timesteps):
-            t1 = i / num_diffusion_timesteps
-            t2 = (i + 1) / num_diffusion_timesteps
-            betas.append(min(1 - alpha_bar(t2) / alpha_bar(t1), max_beta))
-        return np.array(betas)
+# def get_snr(steps=1000):
+#     def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
+#         """
+#         Create a beta schedule that discretizes the given alpha_t_bar function,
+#         which defines the cumulative product of (1-beta) over time from t = [0,1].
+#         :param num_diffusion_timesteps: the number of betas to produce.
+#         :param alpha_bar: a lambda that takes an argument t from 0 to 1 and
+#                           produces the cumulative product of (1-beta) up to that
+#                           part of the diffusion process.
+#         :param max_beta: the maximum beta to use; use values lower than 1 to
+#                          prevent singularities.
+#         """
+#         betas = []
+#         for i in range(num_diffusion_timesteps):
+#             t1 = i / num_diffusion_timesteps
+#             t2 = (i + 1) / num_diffusion_timesteps
+#             betas.append(min(1 - alpha_bar(t2) / alpha_bar(t1), max_beta))
+#         return np.array(betas)
 
-    betas = betas_for_alpha_bar(
-        steps,
-        lambda t: math.cos((t + 0.008) / 1.008 * math.pi / 2) ** 2,
-    )
-    betas = np.array(betas, dtype=np.float64)
+#     betas = betas_for_alpha_bar(
+#         steps,
+#         lambda t: math.cos((t + 0.008) / 1.008 * math.pi / 2) ** 2,
+#     )
+#     betas = np.array(betas, dtype=np.float64)
 
-    alphas = 1.0 - betas
-    alphas_cumprod = np.cumprod(alphas, axis=0)
-    alphas_cumprod_prev = np.append(1.0, alphas_cumprod[:-1])
-    alphas_cumprod_next = np.append(alphas_cumprod[1:], 0.0)
-    sqrt_alphas_cumprod = np.sqrt(alphas_cumprod)
-    sqrt_one_minus_alphas_cumprod = np.sqrt(1.0 - alphas_cumprod)
+#     alphas = 1.0 - betas
+#     alphas_cumprod = np.cumprod(alphas, axis=0)
+#     alphas_cumprod_prev = np.append(1.0, alphas_cumprod[:-1])
+#     alphas_cumprod_next = np.append(alphas_cumprod[1:], 0.0)
+#     sqrt_alphas_cumprod = np.sqrt(alphas_cumprod)
+#     sqrt_one_minus_alphas_cumprod = np.sqrt(1.0 - alphas_cumprod)
 
-    _alpha = sqrt_alphas_cumprod
-    _sigma = sqrt_one_minus_alphas_cumprod
+#     _alpha = sqrt_alphas_cumprod
+#     _sigma = sqrt_one_minus_alphas_cumprod
 
-    snr = (_alpha / _sigma) ** 2
-    return snr
+#     snr = (_alpha / _sigma) ** 2
+#     return snr
 # --------------------------------------------------
 
 class ModelMeanType(enum.Enum):
@@ -141,9 +158,6 @@ class LossType(enum.Enum):
     )  # use raw MSE loss (with RESCALED_KL when learning variances)
     KL = enum.auto()  # use the variational lower-bound
     RESCALED_KL = enum.auto()  # like KL, but rescale to estimate the full VLB
-    L1 = enum.auto()  # use L1 loss (Mean Absolute Error)
-    MIXED = enum.auto()
-    MAPPED_MSE = enum.auto()
     
     def is_vb(self):
         return self == LossType.KL or self == LossType.RESCALED_KL
@@ -175,12 +189,16 @@ class GaussianDiffusion:
         loss_type,
         rescale_timesteps=False,
         mse_loss_weight_type='constant',
+        mapping=False,
+        # gamma,
     ):
         self.model_mean_type = model_mean_type
         self.model_var_type = model_var_type
         self.loss_type = loss_type
         self.rescale_timesteps = rescale_timesteps
         self.mse_loss_weight_type = mse_loss_weight_type
+        self.mapping = mapping
+        # self.gamma = gamma
         # Use float64 for accuracy.
         betas = np.array(betas, dtype=np.float64)
         self.betas = betas
@@ -189,8 +207,9 @@ class GaussianDiffusion:
 
         self.num_timesteps = int(betas.shape[0])
 
-        alphas = 1.0 - betas
-        self.alphas_cumprod = np.cumprod(alphas, axis=0)
+        # alphas = 1.0 - betas
+        self.alphas = 1.0 - betas
+        self.alphas_cumprod = np.cumprod(self.alphas, axis=0)
         self.alphas_cumprod_prev = np.append(1.0, self.alphas_cumprod[:-1])
         self.alphas_cumprod_next = np.append(self.alphas_cumprod[1:], 0.0)
         assert self.alphas_cumprod_prev.shape == (self.num_timesteps,)
@@ -216,7 +235,7 @@ class GaussianDiffusion:
         )
         self.posterior_mean_coef2 = (
             (1.0 - self.alphas_cumprod_prev)
-            * np.sqrt(alphas)
+            * np.sqrt(self.alphas)
             / (1.0 - self.alphas_cumprod)
         )
 
@@ -310,7 +329,7 @@ class GaussianDiffusion:
         B, C = x.shape[:2]
         assert t.shape == (B,)
         model_output = model(x, self._scale_timesteps(t), **model_kwargs)
-
+                
         if self.model_var_type in [ModelVarType.LEARNED, ModelVarType.LEARNED_RANGE]:
             assert model_output.shape == (B, C * 2, *x.shape[2:])
             model_output, model_var_values = th.split(model_output, C, dim=1)
@@ -853,7 +872,11 @@ class GaussianDiffusion:
                 k = float(self.mse_loss_weight_type.split('max_snr_')[-1])
                 # max{snr, k}
                 mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).max(dim=1)[0] / snr
-
+            elif self.mse_loss_weight_type.startswith("lambda"):
+                mse_loss_weight = th.sqrt(sigma)
+                
+            elif self.mse_loss_weight_type.startswith("debias"):
+                mse_loss_weight = sigma / alpha
         else:
             if self.mse_loss_weight_type == 'trunc_snr':
                 # max{snr, 1}
@@ -873,6 +896,8 @@ class GaussianDiffusion:
                 k = float(self.mse_loss_weight_type.split('max_snr_')[-1])
                 # min{snr, k}
                 mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).max(dim=1)[0]
+            elif self.mse_loss_weight_type.startswith("lambda"):
+                mse_loss_weight = th.sqrt(alpha) / sigma
             
         if mse_loss_weight is None:
             raise ValueError(f'mse loss weight is not correctly set!')
@@ -893,6 +918,7 @@ class GaussianDiffusion:
                 terms["loss"] *= self.num_timesteps
                 
         elif self.loss_type == LossType.MSE or self.loss_type == LossType.RESCALED_MSE:
+            
             model_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
 
             if self.model_var_type in [
@@ -926,127 +952,23 @@ class GaussianDiffusion:
                 ModelMeanType.VELOCITY: velocity,
             }[self.model_mean_type]
             assert model_output.shape == target.shape == x_start.shape
-            terms["mse"] = mse_loss_weight * mean_flat((target - model_output) ** 2)
+
+            raw_mse = mean_flat((target - model_output) ** 2)
+        
+            if self.mapping:
+                raw_mse = 1 - th.exp(-raw_mse)
+                
+            terms["mse"] = mse_loss_weight * raw_mse
+            
             if "vb" in terms:
                 terms["loss"] = terms["mse"] + terms["vb"]
             else:
                 terms["loss"] = terms["mse"]
-                
-        elif self.loss_type == LossType.L1:
-            model_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
-
-            if self.model_var_type in [
-                ModelVarType.LEARNED,
-                ModelVarType.LEARNED_RANGE,
-            ]:
-                B, C = x_t.shape[:2]
-                assert model_output.shape == (B, C * 2, *x_t.shape[2:])
-                model_output, model_var_values = th.split(model_output, C, dim=1)
-                frozen_out = th.cat([model_output.detach(), model_var_values], dim=1)
-                terms["vb"] = self._vb_terms_bpd(
-                    model=lambda *args, r=frozen_out: r,
-                    x_start=x_start,
-                    x_t=x_t,
-                    t=t,
-                    clip_denoised=False,
-                )["output"]
-
-            target = {
-                ModelMeanType.PREVIOUS_X: self.q_posterior_mean_variance(
-                    x_start=x_start, x_t=x_t, t=t
-                )[0],
-                ModelMeanType.START_X: x_start,
-                ModelMeanType.EPSILON: noise,
-                ModelMeanType.VELOCITY: velocity,
-            }[self.model_mean_type]
-            assert model_output.shape == target.shape == x_start.shape
-            terms["l1"] = mean_flat(th.abs(target - model_output))
-            if "vb" in terms:
-                terms["loss"] = terms["l1"] + terms["vb"]
-            else:
-                terms["loss"] = terms["l1"]
-                
-        elif self.loss_type == LossType.MIXED:
-            model_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
-
-            if self.model_var_type in [
-                ModelVarType.LEARNED,
-                ModelVarType.LEARNED_RANGE,
-            ]:
-                B, C = x_t.shape[:2]
-                assert model_output.shape == (B, C * 2, *x_t.shape[2:])
-                model_output, model_var_values = th.split(model_output, C, dim=1)
-                frozen_out = th.cat([model_output.detach(), model_var_values], dim=1)
-                terms["vb"] = self._vb_terms_bpd(
-                    model=lambda *args, r=frozen_out: r,
-                    x_start=x_start,
-                    x_t=x_t,
-                    t=t,
-                    clip_denoised=False,
-                )["output"]
-
-            target = {
-                ModelMeanType.PREVIOUS_X: self.q_posterior_mean_variance(
-                    x_start=x_start, x_t=x_t, t=t
-                )[0],
-                ModelMeanType.START_X: x_start,
-                ModelMeanType.EPSILON: noise,
-                ModelMeanType.VELOCITY: velocity,
-            }[self.model_mean_type]
-            assert model_output.shape == target.shape == x_start.shape
-            
-            l1_loss = mean_flat(th.abs(target - model_output))
-            mse_loss = mean_flat((target - model_output) ** 2)
-            
-            terms["loss"] = th.where(t > 500, mse_loss, l1_loss)
-            
-            
-            if "vb" in terms:
-                terms["loss"] = terms["l1"] + terms["vb"]
-            else:
-                terms["loss"] = terms["l1"]
-                                
-        elif self.loss_type == LossType.MAPPED_MSE:
-            model_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
-
-            if self.model_var_type in [
-                ModelVarType.LEARNED,
-                ModelVarType.LEARNED_RANGE,
-            ]:
-                B, C = x_t.shape[:2]
-                assert model_output.shape == (B, C * 2, *x_t.shape[2:])
-                model_output, model_var_values = th.split(model_output, C, dim=1)
-                frozen_out = th.cat([model_output.detach(), model_var_values], dim=1)
-                terms["vb"] = self._vb_terms_bpd(
-                    model=lambda *args, r=frozen_out: r,
-                    x_start=x_start,
-                    x_t=x_t,
-                    t=t,
-                    clip_denoised=False,
-                )["output"]
-
-            target = {
-                ModelMeanType.PREVIOUS_X: self.q_posterior_mean_variance(
-                    x_start=x_start, x_t=x_t, t=t
-                )[0],
-                ModelMeanType.START_X: x_start,
-                ModelMeanType.EPSILON: noise,
-                ModelMeanType.VELOCITY: velocity,
-            }[self.model_mean_type]
-            assert model_output.shape == target.shape == x_start.shape
-            mse = (target - model_output) ** 2
-            mapped_mse = 1 - th.exp(-mse)
-            
-            terms["mapped_mse"] = mean_flat(mapped_mse)
-
-            if "vb" in terms:
-                terms["loss"] = terms["mapped_mse"] + terms["vb"]
-            else:
-                terms["loss"] = terms["mapped_mse"]
         else:
             raise NotImplementedError(self.loss_type)
 
         return terms
+
 
     def _prior_bpd(self, x_start):
         """
