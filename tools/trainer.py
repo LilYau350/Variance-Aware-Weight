@@ -3,6 +3,9 @@ import torch.nn as nn
 from torch.cuda.amp import autocast, GradScaler
 from tools import dist_util, logger
 from .resample import LossAwareSampler, UniformSampler, create_named_schedule_sampler
+import csv
+import os
+import torch.distributed as dist
 
 def ema(source, target, decay):
     with torch.no_grad():
@@ -35,16 +38,17 @@ class Trainer:
             self.datalooper = iter(self.train_loader)
             images, labels = next(self.datalooper)
         return images.to(self.device), labels.to(self.device) if self.args.class_cond else None
-
+            
     def _compute_loss(self, images, labels):
         model_kwargs = {"y": labels} if self.args.class_cond else {}
         t, weights = self.schedule_sampler.sample(images.shape[0], device=self.device)
+
         loss_dict = self.diffusion.training_losses(self.model, images, t, model_kwargs=model_kwargs)
         
         # Update sampler with local losses if using LossAwareSampler
         if isinstance(self.schedule_sampler, LossAwareSampler):
             self.schedule_sampler.update_with_local_losses(t, loss_dict["loss"].detach())
-        
+            
         return (loss_dict["loss"] * weights).mean()
 
     def _apply_gradient_clipping(self):
@@ -54,7 +58,9 @@ class Trainer:
     def _update_ema(self):
         if dist_util.is_main_process():
             ema(self.model, self.ema_model, self.args.ema_decay)
-
+                
+                
+                            
     def train_step(self, step):
         if self.args.parallel:
             self.train_loader.sampler.set_epoch(step)
@@ -72,7 +78,7 @@ class Trainer:
             else:
                 loss = self._compute_loss(images, labels) / grad_accumulation  # Scale loss for accumulation
                 loss.backward()
-
+                
             loss_accumulated += loss.item()
 
             # Perform optimization step only after grad_accumulation steps
@@ -81,10 +87,12 @@ class Trainer:
                     if self.args.grad_clip:
                         self.scaler.unscale_(self.optimizer)
                         self._apply_gradient_clipping()
+                    
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
                 else:
                     self._apply_gradient_clipping()
+                    
                     self.optimizer.step()
                 self.optimizer.zero_grad()
         
@@ -97,6 +105,3 @@ class Trainer:
             self.pbar.set_postfix(loss=loss_accumulated)
 
         return loss_accumulated  # Return scalar accumulated loss 
-
-
-
