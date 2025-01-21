@@ -57,12 +57,12 @@ class Sampler:
         self.args = args
         self.device = device
         self.model = eval_model
-        self.diffusion = diffusion
+        self.diffusion = diffusion      
         self.classifier = classifier
 
     def _model_fn(self, x, t, y=None):
         return self.model(x, t, y if self.args.class_cond else None)
-
+    
     def ddim_sampler(self, num_samples, sample_size, image_size, num_classes, progress_bar=False):
         self.model.eval()
         all_samples, all_labels = [], []
@@ -74,7 +74,9 @@ class Sampler:
 
         if progress_bar and dist_util.is_main_process():
             pbar = tqdm(total=num_samples, desc="Generating Samples (DDIM)")
-
+            
+        vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse").to(self.device) if self.args.in_chans == 4 else None
+        
         while len(all_samples) * sample_size < num_samples:
             classes = torch.randint(0, num_classes, (sample_size,), device=self.device) if self.args.class_cond else None
             sample = self.diffusion.ddim_sample_loop(
@@ -84,7 +86,7 @@ class Sampler:
                 model_kwargs={"y": classes} if self.args.class_cond else {},
                 cond_fn=(lambda x, t, y: self.classifier.cond_fn(x, t, y, self.args.guidance_scale)) if self.classifier else None,
             )
-            sample = ((sample + 1) * 127.5).clamp(0, 255).to(torch.uint8).permute(0, 2, 3, 1).contiguous()
+            sample = self._process_sample(sample, vae)
 
             self._gather_samples(all_samples, all_labels, sample, classes, world_size)
 
@@ -106,8 +108,9 @@ class Sampler:
             pbar = tqdm(total=num_samples, desc="Generating Samples (Heun)")
 
         vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse").to(self.device) if self.args.in_chans == 4 else None
-        net = Net(model=self.model, img_channels=self.args.in_chans, img_resolution=image_size,
-                  noise_schedule=self.args.beta_schedule, amp=self.args.amp).to(self.device)
+        net = Net(model=self.model, img_channels=self.args.in_chans, img_resolution=image_size, label_dim=num_classes,
+                  noise_schedule=self.args.beta_schedule, amp=self.args.amp, power=self.args.p,
+                  pred_x0=(self.args.mean_type == 'START_X')).to(self.device)
 
         while len(all_samples) * sample_size < num_samples:
             y_cond = torch.randint(0, num_classes, (sample_size,), device=self.device) if self.args.class_cond else None
@@ -115,8 +118,7 @@ class Sampler:
             class_labels, z = self._prepare_labels(y_cond, num_classes, sample_size, z)
 
             sample = ablation_sampler(net, latents=z, num_steps=self.args.sample_timesteps, solver="heun",
-                                      class_labels=class_labels, guidance_scale=self.args.guidance_scale,
-                                      eps_scaler=self.args.eps_scaler)
+                                      class_labels=class_labels, guidance_scale=self.args.guidance_scale,)
             sample = self._process_sample(sample, vae)
             self._gather_samples(all_samples, all_labels, sample, class_labels, world_size)
 
@@ -155,8 +157,12 @@ class Sampler:
                 sample, _ = sample.chunk(2, dim=0)
             # Encoded with scale factor 0.18215. Decode by dividing by it for accurate reconstruction and to avoid FID errors.
             sample = vae.decode(sample.float() / 0.18215).sample
-        return ((sample + 1) * 127.5).clamp(0, 255).to(torch.uint8).permute(0, 2, 3, 1).contiguous()
+        return self._inverse_normalize(sample)
 
+    def _inverse_normalize(self, sample):
+        """Inverse the normalization to bring the sample back to the original image range."""
+        return ((sample + 1) * 127.5).clamp(0, 255).to(torch.uint8).permute(0, 2, 3, 1).contiguous()
+    
     def sample(self, num_samples, sample_size, image_size, num_classes, progress_bar=False):
         if self.args.sampler == "ddim":
             return self.ddim_sampler(num_samples, sample_size, image_size, num_classes, progress_bar)
