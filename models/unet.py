@@ -981,7 +981,7 @@ def create_unet_model(
     )
 
 def UNet_32(num_classes=10, in_channels=3, dropout=0, learn_sigma=False, class_cond=True, drop_label_prob=0.0, **kwargs):
-    return create_unet_model(image_size=32, num_channels=128, num_res_blocks=2, attention_resolutions="16", num_heads=1, 
+    return create_unet_model(image_size=32, num_channels=128, num_res_blocks=2, attention_resolutions="16,8", num_heads=4, 
                              num_head_channels=-1, num_classes=num_classes, dropout=dropout, in_channels=in_channels, 
                              drop_label_prob=drop_label_prob, learn_sigma=learn_sigma, class_cond=class_cond, **kwargs)
     
