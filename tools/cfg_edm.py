@@ -5,6 +5,7 @@ import torch
 from functools import partial
 import torch.nn.functional as F
 from torch.cuda.amp import autocast
+# from tools.gaussian_diffusion import betas_for_alpha_bar
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OP_DIR = os.path.join(BASE_DIR, 'op')
@@ -21,10 +22,11 @@ class Net(torch.nn.Module):
         img_channels,                       # Number of color channels.
         pred_x0         = False,
         label_dim       = 0,                # Number of class labels, 0 = unconditional.
-        amp        = False,            # Execute the underlying model at FP16 precision?
+        amp             = False,            # Execute the underlying model at FP16 precision?
         C_1             = 0.001,            # Timestep adjustment at low noise levels.
         C_2             = 0.008,            # Timestep adjustment at high noise levels.
         M               = 1000,             # Original number of timesteps in the DDPM formulation.
+        power           = 2,
         noise_schedule  = 'linear',
     ):
         super().__init__()
@@ -35,17 +37,19 @@ class Net(torch.nn.Module):
         self.C_1 = C_1
         self.C_2 = C_2
         self.M = M
+        self.power = power
         self.model = model
         self.noise_schedule = noise_schedule
         u = torch.zeros(M + 1)
+
         for j in range(M, 0, -1): # M, ..., 1
             u[j - 1] = ((u[j] ** 2 + 1) / (self.alpha_bar(j - 1) / self.alpha_bar(j)).clip(min=C_1) - 1).sqrt()
         self.register_buffer('u', u)
         self.sigma_min = float(u[M - 1])
         self.sigma_max = float(u[0])
-
+        
         self.pred_x0 = pred_x0
-
+        
     def forward(self, x, sigma, class_labels=None, force_fp32=False, **model_kwargs):
         x = x.to(torch.float32)
         sigma = sigma.to(torch.float32).reshape(-1, 1, 1, 1)
@@ -69,6 +73,7 @@ class Net(torch.nn.Module):
             F_x = self.model((c_in * combined).to(dtype), c_noise.flatten().repeat(x.shape[0]).int(), y=class_labels, **model_kwargs)
 
             assert F_x.dtype == dtype
+            
             if not self.pred_x0:
                 if not float_equal(guidance_scale, 1.0):
                     cond, uncond = torch.split(F_x, len(F_x) // 2, dim=0)
@@ -97,11 +102,10 @@ class Net(torch.nn.Module):
             alphas_cumprod = np.cumprod(alphas, axis=0)
             return alphas_cumprod[self.M - j]
         
-        elif 'optim' in self.noise_schedule:
-            k = float(self.noise_schedule.split("optim_")[-1])
+        elif  self.noise_schedule == 'power':
             j = torch.as_tensor(j)
             t = np.linspace(0, self.M, self.M + 1, dtype=np.float64)
-            betas = 0.0001 + (0.02 - 0.0001) * ((t) / self.M) ** k
+            betas = 0.0001 + (0.02 - 0.0001) * ((t) / self.M) ** self.power
             alphas = 1.0 - betas
             alphas_cumprod = np.cumprod(alphas, axis=0)
             return alphas_cumprod[self.M - j]
@@ -120,8 +124,7 @@ def ablation_sampler(
     num_steps=18, sigma_min=None, sigma_max=None, rho=7,
     solver='heun', discretization='edm', schedule='linear', scaling='none',
     epsilon_s=1e-3, C_1=0.001, C_2=0.008, M=1000, alpha=1,
-    S_churn=0, S_min=0, S_max=float('inf'), S_noise=1, eps_scaler=1.0, 
-    **model_kwargs,
+    S_churn=0, S_min=0, S_max=float('inf'), S_noise=1, **model_kwargs,
 ):
     assert solver in ['euler', 'heun']
     assert discretization in ['vp', 've', 'iddpm', 'edm']
@@ -204,11 +207,7 @@ def ablation_sampler(
 
             h = t_next - t_hat
             denoised = net(x_hat / s(t_hat), sigma(t_hat), class_labels, **model_kwargs).to(torch.float64)
-
-            pred_eps = (x_hat - denoised) / sigma(t_hat)
-            pred_eps = pred_eps / eps_scaler
-            denoised = x_hat - pred_eps * sigma(t_hat)
-
+            
             d_cur = (sigma_deriv(t_hat) / sigma(t_hat) + s_deriv(t_hat) / s(t_hat)) * x_hat - sigma_deriv(t_hat) * s(t_hat) / sigma(t_hat) * denoised
             x_prime = x_hat + alpha * h * d_cur
             t_prime = t_hat + alpha * h
