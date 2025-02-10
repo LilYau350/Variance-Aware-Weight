@@ -190,7 +190,8 @@ class GaussianDiffusion:
         rescale_timesteps=False,
         mse_loss_weight_type='constant',
         mapping=False,
-        # gamma,
+        p2_gamma=1,
+        p2_k=1,
     ):
         self.model_mean_type = model_mean_type
         self.model_var_type = model_var_type
@@ -198,7 +199,11 @@ class GaussianDiffusion:
         self.rescale_timesteps = rescale_timesteps
         self.mse_loss_weight_type = mse_loss_weight_type
         self.mapping = mapping
-        # self.gamma = gamma
+        
+        # P2 weighting
+        self.p2_gamma = p2_gamma
+        self.p2_k = p2_k
+        
         # Use float64 for accuracy.
         betas = np.array(betas, dtype=np.float64)
         self.betas = betas
@@ -896,8 +901,12 @@ class GaussianDiffusion:
                 k = float(self.mse_loss_weight_type.split('max_snr_')[-1])
                 # min{snr, k}
                 mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).max(dim=1)[0]
+                
             elif self.mse_loss_weight_type.startswith("lambda"):
                 mse_loss_weight = th.sqrt(alpha) / sigma
+                
+            elif self.mse_loss_weight_type.startswith("p2"):
+                mse_loss_weight = 1 / (self.p2_k + snr)**self.p2_gamma
             
         if mse_loss_weight is None:
             raise ValueError(f'mse loss weight is not correctly set!')
