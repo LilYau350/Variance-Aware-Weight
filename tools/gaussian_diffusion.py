@@ -877,6 +877,7 @@ class GaussianDiffusion:
                 k = float(self.mse_loss_weight_type.split('max_snr_')[-1])
                 # max{snr, k}
                 mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).max(dim=1)[0] / snr
+                
             elif self.mse_loss_weight_type.startswith("lambda"):
                 mse_loss_weight = th.sqrt(sigma)
                 
@@ -885,7 +886,13 @@ class GaussianDiffusion:
                 
             elif self.mse_loss_weight_type.startswith("p2"):
                 mse_loss_weight = 1 / (self.p2_k + snr)**self.p2_gamma
-                
+
+            elif self.mse_loss_weight_type.startswith("min_debias"):
+                mse_loss_weight = torch.minimum(sigma / alpha, torch.ones_like(sigma))
+
+            elif self.mse_loss_weight_type.startswith("max_debias"):
+                mse_loss_weight = torch.maximum(sigma / alpha, torch.ones_like(sigma))
+                  
         else:
             if self.mse_loss_weight_type == 'trunc_snr':
                 # max{snr, 1}
