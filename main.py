@@ -34,7 +34,6 @@ from tools.gaussian_diffusion import (
 
 warnings.filterwarnings("ignore")
 
-# os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 model_variants = [
     "UNet-32","ADM-32", "ADM-64", "ADM-128", "ADM-256", "ADM-512", "UNet-64", "LDM",
@@ -68,6 +67,8 @@ def parse_args():
     parser.add_argument("--loss_type", type=str, default='MSE', choices=['MSE', 'RESCALED_MSE', 'KL', 'RESCALED_KL'], help="Loss type")
     parser.add_argument("--weight_type", type=str, default='constant', help="'constant', 'lambda', 'min_snr_k','vmin_snr_k', 'max_snr_k' 'debias', where k is a positive integer.")
     parser.add_argument("--mapping", type=str2bool, default=False, help="Enable mapped MSE loss (default: False)")
+    parser.add_argument("--p2_gamma", type=int, default=1, help="hyperparameter for P2 weight")
+    parser.add_argument("--p2_k", type=int, default=1, help="hyperparameter for P2 weight")
 
     # Training
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
@@ -264,7 +265,8 @@ def build_diffusion(args, use_ddim=False):
         rescale_timesteps=True,
         mse_loss_weight_type=args.weight_type,
         mapping=args.mapping,
-        # gamma=args.gamma,
+        p2_gamma = args.p2_gamma,
+        p2_k = args.p2_k
     )
 
     if use_ddim:
