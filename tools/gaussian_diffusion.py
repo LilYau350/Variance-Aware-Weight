@@ -882,6 +882,10 @@ class GaussianDiffusion:
                 
             elif self.mse_loss_weight_type.startswith("debias"):
                 mse_loss_weight = sigma / alpha
+                
+            elif self.mse_loss_weight_type.startswith("p2"):
+                mse_loss_weight = 1 / (self.p2_k + snr)**self.p2_gamma
+                
         else:
             if self.mse_loss_weight_type == 'trunc_snr':
                 # max{snr, 1}
@@ -903,10 +907,8 @@ class GaussianDiffusion:
                 mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).max(dim=1)[0]
                 
             elif self.mse_loss_weight_type.startswith("lambda"):
-                mse_loss_weight = th.sqrt(alpha) / sigma
-                
-            elif self.mse_loss_weight_type.startswith("p2"):
-                mse_loss_weight = 1 / (self.p2_k + snr)**self.p2_gamma
+                mse_loss_weight = th.sqrt(alpha)
+
             
         if mse_loss_weight is None:
             raise ValueError(f'mse loss weight is not correctly set!')
