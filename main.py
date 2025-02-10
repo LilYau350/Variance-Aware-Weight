@@ -482,7 +482,6 @@ def init(args):
 
     if args.train:
         optimizer = optim.AdamW(model.parameters(), lr=args.lr, betas=args.betas, weight_decay=args.weight_decay, eps=args.eps)
-        # optimizer = SGDF(model.parameters(), lr=args.lr, betas=args.betas, weight_decay=args.weight_decay)
         scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=get_lr_lambda(args))
     else:
         optimizer = None
