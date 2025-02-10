@@ -888,10 +888,10 @@ class GaussianDiffusion:
                 mse_loss_weight = 1 / (self.p2_k + snr)**self.p2_gamma
 
             elif self.mse_loss_weight_type.startswith("min_debias"):
-                mse_loss_weight = torch.minimum(sigma / alpha, torch.ones_like(sigma))
+                mse_loss_weight = th.minimum(sigma / alpha, th.ones_like(sigma))
 
             elif self.mse_loss_weight_type.startswith("max_debias"):
-                mse_loss_weight = torch.maximum(sigma / alpha, torch.ones_like(sigma))
+                mse_loss_weight = th.maximum(sigma / alpha, th.ones_like(sigma))
                   
         else:
             if self.mse_loss_weight_type == 'trunc_snr':
