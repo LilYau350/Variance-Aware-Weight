@@ -62,6 +62,7 @@ class Trainer:
                 
                             
     def train_step(self, step):
+        self.model.train()
         if self.args.parallel:
             self.train_loader.sampler.set_epoch(step)
         
