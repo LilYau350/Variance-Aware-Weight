@@ -55,7 +55,7 @@ def random_crop_arr(pil_image, image_size, min_crop_frac=0.8, max_crop_frac=1.0)
     return arr[crop_y: crop_y + image_size, crop_x: crop_x + image_size]
 
 # Encoded ImageNet HDF5 Dataset
-class EncodedImageNet(Dataset):
+class Latent(Dataset):
     def __init__(self, h5_file, dataset_type="train", image_size=32, random_flip=True):
         super().__init__()
         self.h5_file = h5_file
@@ -145,16 +145,16 @@ def load_imagenet(data_dir, image_size, random_crop, random_flip,):
 
     return train_dataset, val_dataset
 
-# HDF5 Encoded ImageNet Loader
-def load_encoded_imagenet(data_dir, image_size, random_flip):
-    h5_file = os.path.join(data_dir, 'ImageNet.h5')
-    train_dataset = EncodedImageNet(h5_file=h5_file, dataset_type='train', image_size=image_size, random_flip=random_flip)
-    val_dataset = EncodedImageNet(h5_file=h5_file, dataset_type='val', image_size=image_size, random_flip=random_flip)
+# HDF5Latent Loader
+def load_latent(data_dir, image_size, random_flip):
+    h5_file = os.path.join(data_dir)
+    train_dataset = Latent(h5_file=h5_file, dataset_type='train', image_size=image_size, random_flip=random_flip)
+    val_dataset = Latent(h5_file=h5_file, dataset_type='val', image_size=image_size, random_flip=random_flip)
     
     return train_dataset, val_dataset
 
-# LSUN Bedroom Dataset Loader
-def load_lsun_bedroom(data_dir, image_size, random_crop, random_flip,):
+# LSUN Dataset Loader
+def load_lsun(data_dir, image_size, random_crop, random_flip,):
     
     transform = transforms.Compose([
         transforms.Lambda(lambda img: img if img.size == (image_size, image_size) else (
@@ -165,8 +165,8 @@ def load_lsun_bedroom(data_dir, image_size, random_crop, random_flip,):
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
     
-    train_dataset = datasets.LSUN(root=data_dir, classes='bedroom_train', transform=transform)
-    val_dataset = datasets.LSUN(root=data_dir, classes='bedroom_val', transform=transform)
+    train_dataset = datasets.ImageFolder(root=f"{data_dir}/train", transform=transform)
+    val_dataset = datasets.ImageFolder(root=f"{data_dir}/val", transform=transform)
 
     return train_dataset, val_dataset
 
@@ -181,11 +181,11 @@ def load_dataset(data_dir, dataset_name, batch_size=128, image_size=None, random
     elif dataset_name == 'ImageNet':
         train_dataset, test_dataset = load_imagenet(data_dir, image_size, random_crop, random_flip,)
         
-    elif dataset_name == 'Encoded_ImageNet':
-        train_dataset, test_dataset = load_encoded_imagenet(data_dir, image_size, random_flip)
+    elif dataset_name == 'Latent':
+        train_dataset, test_dataset = load_latent(data_dir, image_size, random_flip)
             
-    elif dataset_name == 'LSUN_Bedroom':
-        train_dataset, test_dataset = load_lsun_bedroom(data_dir, image_size, random_crop, random_flip,)
+    elif dataset_name == 'LSUN':
+        train_dataset, test_dataset = load_lsun(data_dir, image_size, random_crop, random_flip,)
         
     else:
         raise ValueError("Unsupported dataset")
