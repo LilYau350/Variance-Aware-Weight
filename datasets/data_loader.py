@@ -54,7 +54,7 @@ def random_crop_arr(pil_image, image_size, min_crop_frac=0.8, max_crop_frac=1.0)
     crop_x = random.randrange(arr.shape[1] - image_size + 1)
     return arr[crop_y: crop_y + image_size, crop_x: crop_x + image_size]
 
-# Encoded ImageNet HDF5 Dataset
+# Latent HDF5 Dataset
 class Latent(Dataset):
     def __init__(self, h5_file, dataset_type="train", image_size=32, random_flip=True):
         super().__init__()
