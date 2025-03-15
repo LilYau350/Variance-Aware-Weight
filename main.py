@@ -418,7 +418,7 @@ def train(args, **kwargs):
         kwargs['ref_stats'], kwargs['eval_dir'], kwargs['device']
     )
     
-    model.train()
+    # model.train()
     model_size = sum(param.data.nelement() for param in model.parameters())
         
     if dist_util.is_main_process():
