@@ -109,6 +109,15 @@ class Net(torch.nn.Module):
             alphas = 1.0 - betas
             alphas_cumprod = np.cumprod(alphas, axis=0)
             return alphas_cumprod[self.M - j]
+            
+        elif self.noise_schedule == 'laplace':
+            mu, b = 0.0, 0.5         
+            t_normalized = (self.M - j) / self.M  
+            log_term = 1 - 2 * torch.abs(0.5 - t_normalized)
+            lmb = mu - b * torch.sign(0.5 - t_normalized) * torch.log(log_term)
+            snr = torch.exp(lmb)
+            alpha_bar = 1 / (1 + 1 / snr)
+            return alpha_bar
         else:
             raise NotImplementedError(f"unknown beta schedule: {self.noise_schedule}")
 
