@@ -46,6 +46,18 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps, power):
         t = np.linspace(0, num_diffusion_timesteps - 1, num_diffusion_timesteps)
         beta_t = beta_start + (beta_end - beta_start) * ((t) / (num_diffusion_timesteps)) ** power
         return beta_t
+    elif schedule_name == "laplace":
+        t = np.arange(1, num_diffusion_timesteps + 1)
+        t_normalized = th.tensor((t - 1) / (num_diffusion_timesteps - 1), dtype=th.float64)
+        mu, b = 0.0, 0.5
+        log_term = 1 - 2 * th.abs(0.5 - t_normalized)
+        lmb = mu - b * th.sign(0.5 - t_normalized) * th.log(log_term)
+        snr = th.exp(lmb)        
+        alpha_t = th.sqrt(1 / (1 + 1/snr))  # sqrt(bar_alpha_t)
+        bar_alpha_t = alpha_t ** 2
+        alpha_t_single = th.cat([bar_alpha_t[:1], bar_alpha_t[1:] / (bar_alpha_t[:-1])])
+        beta_t = 1 - alpha_t_single
+        return beta_t.numpy() 
     else:
         raise NotImplementedError(f"unknown beta schedule: {schedule_name}")
 
