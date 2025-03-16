@@ -57,7 +57,7 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
 
     # Gaussian Diffusion
-    parser.add_argument("--beta_schedule", type=str, default='cosine', help="Beta schedule type 'linear', 'cosine' and 'power'.")
+    parser.add_argument("--beta_schedule", type=str, default='cosine', help="Beta schedule type 'linear', 'cosine', 'laplace', and 'power'.")
     parser.add_argument("--p", type=float, default=2, help="power for power schedule.")
     parser.add_argument("--beta_1", type=float, default=1e-4, help="Starting value of beta for the diffusion process")
     parser.add_argument("--beta_T", type=float, default=0.02, help="Ending value of beta for the diffusion process")
