@@ -2,6 +2,7 @@ import torch
 from tqdm import tqdm
 import torch.distributed as dist
 from diffusers.models import AutoencoderKL
+from torch.cuda.amp import autocast
 from tools import dist_util
 from .cfg_edm import ablation_sampler, float_equal, Net
 from models.unet import EncoderUNetModel
@@ -110,7 +111,7 @@ class Sampler:
         vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse").to(self.device) if self.args.in_chans == 4 else None
         net = Net(model=self.model, img_channels=self.args.in_chans, img_resolution=image_size, label_dim=num_classes,
                   noise_schedule=self.args.beta_schedule, amp=self.args.amp, power=self.args.p,
-                  pred_x0=(self.args.mean_type == 'START_X')).to(self.device)
+                  pred_type=self.args.mean_type).to(self.device)
 
         while len(all_samples) * sample_size < num_samples:
             y_cond = torch.randint(0, num_classes, (sample_size,), device=self.device) if self.args.class_cond else None
@@ -158,7 +159,7 @@ class Sampler:
             # Encoded with scale factor 0.18215. Decode by dividing by it for accurate reconstruction and to avoid FID errors.
             sample = vae.decode(sample.float() / 0.18215).sample
         return self._inverse_normalize(sample)
-
+    
     def _inverse_normalize(self, sample):
         """Inverse the normalization to bring the sample back to the original image range."""
         return ((sample + 1) * 127.5).clamp(0, 255).to(torch.uint8).permute(0, 2, 3, 1).contiguous()
