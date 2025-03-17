@@ -76,29 +76,15 @@ class Net(torch.nn.Module):
                 c_skip = 1
                 c_out = -sigma
                 D_x = c_skip * x + c_out * F_x[:, :self.img_channels].to(torch.float32)
-                
             elif self.pred_type == 'START_X':
                 D_x = F_x
                 D_x = self.apply(D_x, guidance_scale)             
-                
             elif self.pred_type == 'VELOCITY':
                 F_x = self.apply(F_x, guidance_scale)         
                 # v = sqrt_alpha_bar * eps - sqrt_one_minus_alpha_bar * x_0
                 c_skip = c_in ** 2  # \bar{\alpha}_t ** 2
                 c_out = -sigma * c_in  # -\sqrt{1 - \bar{\alpha}_t}
                 D_x = c_skip * x + c_out * F_x[:, :self.img_channels].to(torch.float32)
-
-            elif self.pred_type == 'UNRAVEL': 
-                F_x = self.apply(F_x, guidance_scale) 
-                c_skip = 1
-                c_out = 1 / c_in
-                D_x = (c_skip * x + c_out * F_x[:, :self.img_channels].to(torch.float32) )/ 2
-                
-            # elif self.pred_type == 'UNRAVEL':
-            #     F_x = self.apply(F_x, guidance_scale)
-            #     c_skip = 1
-            #     c_out = -1 / c_in
-            #     D_x = (c_skip * x + c_out * F_x[:, :self.img_channels].to(torch.float32) )/ 2
             else:
                 raise ValueError(f"Unsupported pred_type: {self.pred_type}")
 
