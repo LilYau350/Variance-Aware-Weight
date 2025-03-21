@@ -245,6 +245,11 @@ def build_model(args):
                                        in_channels=args.in_chans, num_classes=args.num_classes,
                                        learn_sigma=args.learn_sigma,
                                        class_dropout_prob=args.drop_label_prob)
+    elif "SiT" in args.model:
+        model = model_dict[args.model](image_size=args.image_size, patch_size=args.patch_size,
+                                       in_channels=args.in_chans, num_classes=args.num_classes,
+                                       learn_sigma=args.learn_sigma,
+                                       class_dropout_prob=args.drop_label_prob)
     
     return model
 
