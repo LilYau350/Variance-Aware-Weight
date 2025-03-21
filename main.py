@@ -23,7 +23,7 @@ from tools.sampler import Sampler, Classifier
 from datasets.data_loader import load_dataset
 from tools.respace import SpacedDiffusion, space_timesteps
 from torch.nn.parallel import DistributedDataParallel as DDP
-from models.unet import *; from models.dit import *; from models.vit import *; from models.uvit import *
+from models.unet import *; from models.dit import *; from models.vit import *; from models.sit import *; from models.uvit import *
 from tools.gaussian_diffusion import (
     get_named_beta_schedule,
     GaussianDiffusion,
@@ -39,6 +39,7 @@ model_variants = [
     "UNet-32","ADM-32", "ADM-64", "ADM-128", "ADM-256", "ADM-512", "UNet-64", "LDM",
     "ViT-S", "ViT-B", "ViT-L", "ViT-XL",
     "DiT-S", "DiT-B", "DiT-L", "DiT-XL",
+    "SiT-S", "SiT-B", "SiT-L", "SiT-XL",
     "U-ViT-S", "U-ViT-S-D", "U-ViT-M", "U-ViT-L", "U-ViT-H"]
      
 def parse_args():
