@@ -891,7 +891,7 @@ class GaussianDiffusion:
                 mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).max(dim=1)[0] / snr
                 
             elif self.mse_loss_weight_type.startswith("lambda"):
-                mse_loss_weight = th.sqrt(sigma)
+                mse_loss_weight = sigma
                 
             elif self.mse_loss_weight_type.startswith("debias"):
                 mse_loss_weight = sigma / alpha
@@ -926,7 +926,7 @@ class GaussianDiffusion:
                 mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).max(dim=1)[0]
                 
             elif self.mse_loss_weight_type.startswith("lambda"):
-                mse_loss_weight = th.sqrt(alpha)
+                mse_loss_weight = alpha
 
             
         if mse_loss_weight is None:
