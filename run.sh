@@ -48,7 +48,7 @@ torchrun  --nproc_per_node=2 main.py --train True --eval True --data_dir '' --da
 #           --warmup_steps 5000 --cosine_decay False --class_cond True --parallel True --amp True  \
 #           --sample_timesteps 50 --guidance_scale 1.5 --eps_scaler 1.0 --save_step 200000 --eval_step 200000 --fid_cache '' \
 
-# ImageNet 32×32×4 ViT
+# ImageNet 32×32×4 DiT
 torchrun  --nproc_per_node=2 main.py --train True --eval True --data_dir '' --dataset 'Latent' \
           --patch_size 2 --in_chans 4 --image_size 32 --num_classes 1000 --model 'DiT-B' \
           --lr 1e-3 --betas 0.99 0.99 --dropout 0.0 --drop_label_prob 0.15 --total_steps 800000 --batch_size 256 \
