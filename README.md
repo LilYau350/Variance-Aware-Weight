@@ -7,7 +7,7 @@ You can create a new conda environment:
 
 ```
 conda env create -f environment.yml
-conda activate ddpm
+conda activate diffusion
 ```
 
 or install the necessary package by:
