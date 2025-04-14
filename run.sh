@@ -35,7 +35,7 @@ torchrun  --nproc_per_node=2 main.py --train True --eval True --data_dir '' --da
 # # ImageNet 64×64×3 ViT
 # torchrun  --nproc_per_node=2 main.py --train True --eval True --data_dir '' --dataset 'ImageNet' \
 #           --patch_size 4 --in_chans 3 --image_size 64 --num_classes 1000 --model 'DiT-L' \
-#           --lr 1e-4 --betas 0.99 0.99 --dropout 0.0 --drop_label_prob 0.15 --total_steps 800000 --batch_size 256 \
+#           --lr 1e-3 --betas 0.99 0.99 --dropout 0.0 --drop_label_prob 0.15 --total_steps 800000 --batch_size 256 \
 #           --beta_schedule 'cosine' --loss_type 'MSE' --weight_type 'constant' --sampler_type 'uniform' --mapping True \    
 #           --warmup_steps 5000 --cosine_decay False --class_cond True --parallel True --amp True  \
 #           --sample_timesteps 20 --guidance_scale 1.5 --eps_scaler 1.0 --save_step 200000 --eval_step 200000 --fid_cache '' \
@@ -51,8 +51,11 @@ torchrun  --nproc_per_node=2 main.py --train True --eval True --data_dir '' --da
 # ImageNet 32×32×4 ViT
 torchrun  --nproc_per_node=2 main.py --train True --eval True --data_dir '' --dataset 'Latent' \
           --patch_size 2 --in_chans 4 --image_size 32 --num_classes 1000 --model 'DiT-B' \
-          --lr 1e-4 --betas 0.99 0.99 --dropout 0.0 --drop_label_prob 0.15 --total_steps 800000 --batch_size 256 \
+          --lr 1e-3 --betas 0.99 0.99 --dropout 0.0 --drop_label_prob 0.15 --total_steps 800000 --batch_size 256 \
           --beta_schedule 'cosine' --loss_type 'MSE' --weight_type 'constant' --sampler_type 'uniform' --mapping True \
           --warmup_steps 5000 --cosine_decay False --class_cond True --parallel True --amp True  \
           --sample_timesteps 50 --guidance_scale 1.5 --eps_scaler 1.0 --save_step 200000 --eval_step 200000 --fid_cache '' \
+          
+
+
 
