@@ -10,7 +10,7 @@
 #           --lr 1e-4 --betas 0.9 0.999 --dropout 0.0 --drop_label_prob 0.0 --total_steps 500000 --batch_size 128 \
 #           --beta_schedule 'cosine' --loss_type 'MSE' --weight_type 'lambda' --sampler_type 'uniform'\
 #           --warmup_steps 5000 --cosine_decay False --class_cond False --parallel True --amp True \
-#           --sample_timesteps 20 --guidance_scale 1.0 --eps_scaler 1.0 --save_step 100000 --eval_step 100000 --fid_cache '' \
+#           --sample_timesteps 20 --guidance_scale 1.0 --save_step 100000 --eval_step 100000 --fid_cache '' \
 
 # CelebA 64×64×3 ViT
 torchrun  --nproc_per_node=2 main.py --train True --eval True --data_dir '' --dataset 'CelebA' \
@@ -18,7 +18,7 @@ torchrun  --nproc_per_node=2 main.py --train True --eval True --data_dir '' --da
           --lr 1e-3 --betas 0.99 0.99 --dropout 0.0 --drop_label_prob 0.0 --total_steps 500000 --batch_size 128 \
           --beta_schedule 'cosine' --loss_type 'MSE' --weight_type 'lambda' --sampler_type 'uniform'\
           --warmup_steps 5000 --cosine_decay False --class_cond False --parallel True --amp True \
-          --sample_timesteps 20 --guidance_scale 1.0 --eps_scaler 1.0 --save_step 100000 --eval_step 100000 --fid_cache '' \
+          --sample_timesteps 20 --guidance_scale 1.0 --save_step 100000 --eval_step 100000 --fid_cache '' \
 
 # CelebA 64×64×3 DiT
 torchrun  --nproc_per_node=2 main.py --train True --eval True --data_dir '' --dataset 'CelebA' \
@@ -26,7 +26,7 @@ torchrun  --nproc_per_node=2 main.py --train True --eval True --data_dir '' --da
           --lr 1e-3 --betas 0.9 0.999 --dropout 0.0 --drop_label_prob 0.0 --total_steps 500000 --batch_size 128 \
           --beta_schedule 'cosine' --loss_type 'MSE' --weight_type 'lambda' --sampler_type 'uniform'\
           --warmup_steps 5000 --cosine_decay False --class_cond True --parallel True --amp True \
-          --sample_timesteps 20 --guidance_scale 1.0 --eps_scaler 1.0 --save_step 100000 --eval_step 100000 --fid_cache '' \
+          --sample_timesteps 20 --guidance_scale 1.0 --save_step 100000 --eval_step 100000 --fid_cache '' \
 
 ################################################################################################################################
 # Conditional generation in ImageNet
@@ -38,7 +38,7 @@ torchrun  --nproc_per_node=2 main.py --train True --eval True --data_dir '' --da
 #           --lr 1e-3 --betas 0.99 0.99 --dropout 0.0 --drop_label_prob 0.15 --total_steps 800000 --batch_size 256 \
 #           --beta_schedule 'cosine' --loss_type 'MSE' --weight_type 'constant' --sampler_type 'uniform' --mapping True \    
 #           --warmup_steps 5000 --cosine_decay False --class_cond True --parallel True --amp True  \
-#           --sample_timesteps 20 --guidance_scale 1.5 --eps_scaler 1.0 --save_step 200000 --eval_step 200000 --fid_cache '' \
+#           --sample_timesteps 20 --guidance_scale 1.5 --save_step 200000 --eval_step 200000 --fid_cache '' \
 
 # # ImageNet 32×32×4 UNet
 # torchrun  --nproc_per_node=2 main.py --train True --eval True --data_dir '' --dataset 'Latent' \
@@ -46,7 +46,7 @@ torchrun  --nproc_per_node=2 main.py --train True --eval True --data_dir '' --da
 #           --lr 1e-4 --betas 0.9 0.999 --dropout 0.0 --drop_label_prob 0.15 --total_steps 800000 --batch_size 256 \
 #           --beta_schedule 'cosine' --loss_type 'MSE' --weight_type 'constant' --sampler_type 'uniform' --mapping True \
 #           --warmup_steps 5000 --cosine_decay False --class_cond True --parallel True --amp True  \
-#           --sample_timesteps 50 --guidance_scale 1.5 --eps_scaler 1.0 --save_step 200000 --eval_step 200000 --fid_cache '' \
+#           --sample_timesteps 50 --guidance_scale 1.5 --save_step 200000 --eval_step 200000 --fid_cache '' \
 
 # ImageNet 32×32×4 DiT
 torchrun  --nproc_per_node=2 main.py --train True --eval True --data_dir '' --dataset 'Latent' \
@@ -54,7 +54,7 @@ torchrun  --nproc_per_node=2 main.py --train True --eval True --data_dir '' --da
           --lr 1e-3 --betas 0.99 0.99 --dropout 0.0 --drop_label_prob 0.15 --total_steps 800000 --batch_size 256 \
           --beta_schedule 'cosine' --loss_type 'MSE' --weight_type 'constant' --sampler_type 'uniform' --mapping True \
           --warmup_steps 5000 --cosine_decay False --class_cond True --parallel True --amp True  \
-          --sample_timesteps 50 --guidance_scale 1.5 --eps_scaler 1.0 --save_step 200000 --eval_step 200000 --fid_cache '' \
+          --sample_timesteps 50 --guidance_scale 1.5 --save_step 200000 --eval_step 200000 --fid_cache '' \
           
 
 
