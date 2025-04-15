@@ -48,7 +48,7 @@ def parse_args():
     parser.add_argument("--eval", default=True, type=str2bool, help="Load checkpoint and evaluate FID...")
 
     parser.add_argument("--data_dir", type=str, default='./data', help="Path to the dataset directory")
-    parser.add_argument("--dataset", type=str, default='CIFAR-10', choices=['CIFAR-10', 'Gaussian', 'CelebA', 'ImageNet', 'LSUN', 'Latent'], help="Dataset to train on")
+    parser.add_argument("--dataset", type=str, default='CIFAR-10', choices=['CIFAR-10', 'CelebA', 'ImageNet', 'LSUN', 'Latent'], help="Dataset to train on")
     parser.add_argument("--patch_size", type=int, default=None, help="Patch Size for ViT, DiT, U-ViT, type is int")
     parser.add_argument("--in_chans", type=int, default=3, help="Number of input channels for the model")
     parser.add_argument("--image_size", type=int, default=32, help="Image size")
