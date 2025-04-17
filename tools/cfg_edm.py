@@ -108,9 +108,6 @@ class Net(torch.nn.Module):
             alphas_cumprod = np.cumprod(alphas, axis=0)
             return alphas_cumprod[self.M - j]
             
-        elif self.noise_schedule == 'uniform':
-            return (j / self.M) ** 2
-            
         elif  self.noise_schedule == 'power':
             t = np.linspace(0, self.M, self.M + 1, dtype=np.float64)
             betas = 0.0001 + (0.02 - 0.0001) * ((t) / self.M) ** self.power
