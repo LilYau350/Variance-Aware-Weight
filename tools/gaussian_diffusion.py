@@ -15,15 +15,6 @@ from tools.nn import mean_flat
 from tools.losses import normal_kl, discretized_gaussian_log_likelihood
 from tools import logger
 
-def Laplace(t):
-    # t is a scalar value between 0 and 1
-    t_normalized = th.tensor(t, dtype=th.float64)
-    mu, b = 0.0, 0.5
-    log_term = 1 - 2 * th.abs(0.5 - t_normalized)
-    lmb = mu - b * th.sign(0.5 - t_normalized) * th.log(log_term)
-    snr = th.exp(lmb)
-    alpha_t = 1 / (1 + 1 / snr)  # bar_alpha_t
-    return alpha_t.item()  
 
 def get_named_beta_schedule(schedule_name, num_diffusion_timesteps, power):
     """
@@ -57,8 +48,18 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps, power):
         beta_t = beta_start + (beta_end - beta_start) * ((t) / (num_diffusion_timesteps)) ** power
         return beta_t
 
-    elif schedule_name == 'laplace':
-        return betas_for_alpha_bar(num_diffusion_timesteps, Laplace)
+    elif schedule_name == "laplace":
+        t = np.arange(1, num_diffusion_timesteps + 1)
+        t_normalized = th.tensor((t - 1) / (num_diffusion_timesteps - 1), dtype=th.float64)
+        mu, b = 0.0, 0.5
+        log_term = 1 - 2 * th.abs(0.5 - t_normalized)
+        lmb = mu - b * th.sign(0.5 - t_normalized) * th.log(log_term)
+        snr = th.exp(lmb)        
+        alpha_t = th.sqrt(1 / (1 + 1/snr))  # sqrt(bar_alpha_t)
+        bar_alpha_t = alpha_t ** 2
+        alpha_t_single = th.cat([bar_alpha_t[:1], bar_alpha_t[1:] / (bar_alpha_t[:-1])])
+        beta_t = 1 - alpha_t_single
+        return beta_t.numpy() 
         
     else:
         raise NotImplementedError(f"unknown beta schedule: {schedule_name}")
