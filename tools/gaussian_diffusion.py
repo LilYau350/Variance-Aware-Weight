@@ -63,7 +63,7 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps, power):
         return beta_t
 
     elif schedule_name == 'laplace':
-        betas_for_alpha_bar(num_diffusion_timesteps, Laplace)
+        return betas_for_alpha_bar(num_diffusion_timesteps, Laplace)
         
     else:
         raise NotImplementedError(f"unknown beta schedule: {schedule_name}")
