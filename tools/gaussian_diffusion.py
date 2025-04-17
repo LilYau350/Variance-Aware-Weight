@@ -48,11 +48,6 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps, power):
             num_diffusion_timesteps,
             lambda t: math.cos((t + 0.008) / 1.008 * math.pi / 2) ** 2,
         )    
-    elif schedule_name == "uniform":
-        return betas_for_alpha_bar(
-            num_diffusion_timesteps,
-            lambda t: (1 - t) ** 2,
-        )
     elif schedule_name == "power":
         # Optimal schedule
         scale = 1000 / num_diffusion_timesteps
