@@ -117,17 +117,18 @@ class Net(torch.nn.Module):
         
         # elif self.noise_schedule == 'laplace':
         #     mu, b = 0.0, 0.5
-        #     t = np.linspace(0, self.M, self.M + 1, dtype=np.float64)
-        #     t_normalized = torch.tensor((t) / (self.M))
+        #     # t = np.linspace(1, self.M+1, self.M+1, dtype=np.float64)
+        #     t = np.arange(1, self.M + 2, dtype=np.float64)
+        #     t_normalized = torch.tensor((t-1) / (self.M-1))
         #     log_term = 1 - 2 * torch.abs(0.5 - t_normalized)
-        #     lmb = mu - b * torch.sign(0.5 - t_normalized) * torch.log(log_term )
+        #     lmb = mu - b * torch.sign(0.5 - t_normalized) * torch.log(log_term)
         #     snr = torch.exp(lmb)
         #     alpha_bar = 1 / (1 + 1 / snr)
         #     return alpha_bar[self.M - j]
         
         elif self.noise_schedule == 'laplace':
             mu, b = 0.0, 0.5         
-            t_normalized = (self.M - j) / self.M  
+            t_normalized = (self.M - j) / (self.M - 1)  
             log_term = 1 - 2 * torch.abs(0.5 - t_normalized)
             lmb = mu - b * torch.sign(0.5 - t_normalized) * torch.log(log_term)
             snr = torch.exp(lmb)
