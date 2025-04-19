@@ -68,8 +68,8 @@ def random_crop_arr(pil_image, image_size, min_crop_frac=0.8, max_crop_frac=1.0)
     return arr[crop_y : crop_y + image_size, crop_x : crop_x + image_size]
 
 # Load the AutoencoderKL model
-def initialize_vae():
-    vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse").cuda()
+def initialize_vae(args):
+    vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{args.vae}").cuda()
     vae.eval()  # Set model to evaluation mode
     return vae
 
@@ -96,7 +96,8 @@ def compress_batch(images, device, vae):
     with torch.no_grad():
         # 0.18215 is a scale factor that aims to make the standard deviation of the latent distribution close to 1
         # for more stable diffusion model training.
-        latents = vae.encode(images).latent_dist.mean * 0.18215
+        # latents = vae.encode(images).latent_dist.mean * 0.18215
+        latents = vae.encode(images).latent_dist.sample().mul_(0.18215)
     return latents
 
 def save_compressed_latents(data_loader, f, dataset_name, device, vae):
@@ -129,6 +130,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Autoencoder Image Compression/Decompression")
     parser.add_argument("--input", type=str, required=True, help="Input folder path or latent file")
     parser.add_argument("--output", type=str, required=True, help="Output folder path")
+    parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="mse")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for processing images")
     parser.add_argument("--image_size", type=int, default=256, help="Image size for processing")
     args = parser.parse_args()
@@ -136,7 +138,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Initialize the VAE model once at the start
-    vae = initialize_vae()
+    vae = initialize_vae(args)
 
     # Load train and val datasets
     train_loader, val_loader = load_imagenet(args.input, args.image_size, args.batch_size)
