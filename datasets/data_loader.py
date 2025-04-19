@@ -120,7 +120,6 @@ def load_celebA(data_dir, image_size, random_crop, random_flip,):
         transforms.RandomHorizontalFlip() if random_flip else transforms.Lambda(lambda x: x),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-        # transforms.Normalize((0.524, 0.415, 0.359), (0.293, 0.260, 0.252)),
     ])
 
     train_dataset = datasets.ImageFolder(root=f"{data_dir}/train", transform=transform)
