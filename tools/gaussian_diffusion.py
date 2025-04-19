@@ -989,7 +989,7 @@ class GaussianDiffusion:
             raw_mse = mean_flat((target - model_output) ** 2)
         
             if self.mapping:
-                raw_mse = 1 - th.exp(-raw_mse)
+                mse_loss_weight = self.weight(raw_mse.detach())
                 
             terms["mse"] = mse_loss_weight * raw_mse
             
@@ -1002,6 +1002,11 @@ class GaussianDiffusion:
 
         return terms
 
+    def weight(self, raw_mse):
+        raw_mse = raw_mse.to(dtype=th.float64)
+        raw_mse = (raw_mse.mean() - raw_mse) * raw_mse.std().reciprocal()#.add(1e-4) 
+        weight = th.sigmoid(raw_mse)
+        return weight
 
     def _prior_bpd(self, x_start):
         """
