@@ -130,7 +130,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Autoencoder Image Compression/Decompression")
     parser.add_argument("--input", type=str, required=True, help="Input folder path or latent file")
     parser.add_argument("--output", type=str, required=True, help="Output folder path")
-    parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="mse")
+    parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for processing images")
     parser.add_argument("--image_size", type=int, default=256, help="Image size for processing")
     args = parser.parse_args()
