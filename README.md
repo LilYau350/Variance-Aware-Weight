@@ -43,7 +43,7 @@ For ImageNet-256, we crop images to 256x256 and compress them using AutoencoderK
 ``` bash
 python ./preprocessing/encode.py --input /path/to/imagenet --output /path/to/output --batch_size 32 --image_size 256
 ```
-During compression, we use a scale factor of 0.18215 to stabilize diffusion model training, and similarly, divide by 0.18215 during decompression. This follows practices from [LDM](https://github.com/CompVis/latent-diffusion) and [DiT](https://github.com/openai/guided-diffusion/blob/22e0df8183507e13a7813f8d38d51b072ca1e67c/guided_diffusion/image_datasets.py#L126).
+During compression, we use a scale factor of 0.18215 to stabilize diffusion model training, and similarly, divide by 0.18215 during decompression. This follows practices from [LDM](https://github.com/CompVis/latent-diffusion) and [DiT]([https://github.com/openai/guided-diffusion/blob/22e0df8183507e13a7813f8d38d51b072ca1e67c/guided_diffusion/image_datasets.py#L126](https://github.com/huggingface/diffusers/issues/437)).
 
 The compressed latent codes are treated as images, except for their file extension.
 
