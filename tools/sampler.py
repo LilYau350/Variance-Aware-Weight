@@ -76,7 +76,7 @@ class Sampler:
         if progress_bar and dist_util.is_main_process():
             pbar = tqdm(total=num_samples, desc="Generating Samples (DDIM)")
             
-        vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse").to(self.device) if self.args.in_chans == 4 else None
+        vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{self.args.vae}").to(self.device) if self.args.in_chans == 4 else None
         
         while len(all_samples) * sample_size < num_samples:
             classes = torch.randint(0, num_classes, (sample_size,), device=self.device) if self.args.class_cond else None
