@@ -94,6 +94,7 @@ def parse_args():
     parser.add_argument('--resume', type=str, default=None, help='Path to the checkpoint to resume from')
 
     # Logging & Sampling
+    parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")
     parser.add_argument("--sampler", type=str, default="heun", choices=["ddim", "heun"], help="Choose sampler between 'ddim' and 'heun'")
     parser.add_argument("--sample_timesteps", type=int, default=18, help="Number of sample diffusion steps")
     parser.add_argument("--logdir", type=str, default='./logs', help="Log directory")
