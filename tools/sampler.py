@@ -106,7 +106,7 @@ class Sampler:
             dist.barrier()
 
         if progress_bar and dist_util.is_main_process():
-            pbar = tqdm(total=num_samples, desc="Generating Samples (Heun)")
+            pbar = tqdm(total=num_samples, desc=f"Generating Samples ({self.args.solver.capitalize()})")
 
         vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{self.args.vae}").to(self.device) if self.args.in_chans == 4 else None
         net = Net(model=self.model, img_channels=self.args.in_chans, img_resolution=image_size, label_dim=num_classes,
@@ -118,7 +118,7 @@ class Sampler:
             z = torch.randn([sample_size, net.img_channels, net.img_resolution, net.img_resolution], device=self.device)
             class_labels, z = self._prepare_labels(y_cond, num_classes, sample_size, z)
 
-            sample = ablation_sampler(net, latents=z, num_steps=self.args.sample_timesteps, solver="heun",
+            sample = ablation_sampler(net, latents=z, num_steps=self.args.sample_timesteps, solver=self.args.solver,
                                       class_labels=class_labels, guidance_scale=self.args.guidance_scale,)
             sample = self._process_sample(sample, vae)
             self._gather_samples(all_samples, all_labels, sample, class_labels, world_size)
@@ -165,7 +165,8 @@ class Sampler:
         return ((sample + 1) * 127.5).clamp(0, 255).to(torch.uint8).permute(0, 2, 3, 1).contiguous()
     
     def sample(self, num_samples, sample_size, image_size, num_classes, progress_bar=False):
-        if self.args.sampler == "ddim":
+        if self.args.solver == "ddim":
             return self.ddim_sampler(num_samples, sample_size, image_size, num_classes, progress_bar)
-        elif self.args.sampler == "heun":
+        # elif self.args.solver == "heun":
+        else:
             return self.heun_sampler(num_samples, sample_size, image_size, num_classes, progress_bar)
