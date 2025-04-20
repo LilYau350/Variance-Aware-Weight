@@ -64,12 +64,12 @@ def random_crop_arr(pil_image, image_size, min_crop_frac=0.8, max_crop_frac=1.0)
 
 # Latent HDF5 Dataset
 class Latent(Dataset):
-    def __init__(self, h5_file, dataset_type="train", image_size=32, random_flip=True):
+    def __init__(self, h5_file, dataset_type="train", image_size=32):#, random_flip=True):
         super().__init__()
         self.h5_file = h5_file
         self.dataset_type = dataset_type
         self.image_size = image_size
-        self.random_flip = random_flip
+        # self.random_flip = random_flip
 
         # Open the file to determine the length
         with h5py.File(self.h5_file, 'r') as f:
@@ -83,9 +83,9 @@ class Latent(Dataset):
             img = f[f'{self.dataset_type}_latents'][idx]
             label = f[f'{self.dataset_type}_labels'][idx]
 
-        # Apply random flip
-        if self.random_flip and random.random() < 0.5:
-            img = np.flip(img, axis=2)  # Flip horizontally across width axis
+        # # Apply random flip
+        # if self.random_flip and random.random() < 0.5:
+        #     img = np.flip(img, axis=2)  # Flip horizontally across width axis
 
         # Convert NumPy array to PyTorch tensor
         # img = torch.tensor(img, dtype=torch.float32)
@@ -153,10 +153,10 @@ def load_imagenet(data_dir, image_size, random_crop, random_flip,):
     return train_dataset, val_dataset
 
 # HDF5Latent Loader
-def load_latent(data_dir, image_size, random_flip):
+def load_latent(data_dir, image_size):#, random_flip):
     h5_file = os.path.join(data_dir)
-    train_dataset = Latent(h5_file=h5_file, dataset_type='train', image_size=image_size, random_flip=random_flip)
-    val_dataset = Latent(h5_file=h5_file, dataset_type='val', image_size=image_size, random_flip=random_flip)
+    train_dataset = Latent(h5_file=h5_file, dataset_type='train', image_size=image_size)#, random_flip=random_flip)
+    val_dataset = Latent(h5_file=h5_file, dataset_type='val', image_size=image_size)#, random_flip=random_flip)
     
     return train_dataset, val_dataset
 
@@ -189,7 +189,7 @@ def load_dataset(data_dir, dataset_name, batch_size=128, image_size=None, random
         train_dataset, test_dataset = load_imagenet(data_dir, image_size, random_crop, random_flip,)
         
     elif dataset_name == 'Latent':
-        train_dataset, test_dataset = load_latent(data_dir, image_size, random_flip)
+        train_dataset, test_dataset = load_latent(data_dir, image_size)#, random_flip)  
             
     elif dataset_name == 'LSUN':
         train_dataset, test_dataset = load_lsun(data_dir, image_size, random_crop, random_flip,)
