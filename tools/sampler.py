@@ -108,7 +108,7 @@ class Sampler:
         if progress_bar and dist_util.is_main_process():
             pbar = tqdm(total=num_samples, desc="Generating Samples (Heun)")
 
-        vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse").to(self.device) if self.args.in_chans == 4 else None
+        vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{self.args.vae}").to(self.device) if self.args.in_chans == 4 else None
         net = Net(model=self.model, img_channels=self.args.in_chans, img_resolution=image_size, label_dim=num_classes,
                   noise_schedule=self.args.beta_schedule, amp=self.args.amp, power=self.args.p,
                   pred_type=self.args.mean_type).to(self.device)
