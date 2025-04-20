@@ -117,10 +117,12 @@ class Sampler:
             y_cond = torch.randint(0, num_classes, (sample_size,), device=self.device) if self.args.class_cond else None
             z = torch.randn([sample_size, net.img_channels, net.img_resolution, net.img_resolution], device=self.device)
             class_labels, z = self._prepare_labels(y_cond, num_classes, sample_size, z)
-
+            
+            guidance_scale = self._limited_interval_guidance(self.args.t_from, self.args.t_to, self.args.guidance_scale)
+            
             sample = ablation_sampler(net, latents=z, num_steps=self.args.sample_timesteps, solver=self.args.solver,
                                       discretization=self.args.discretization, schedule=self.args.schedule, scaling=self.args.scaling,
-                                      class_labels=class_labels, guidance_scale=self.args.guidance_scale,)
+                                      class_labels=class_labels, guidance_scale=guidance_scale,)
             sample = self._process_sample(sample, vae)
             self._gather_samples(all_samples, all_labels, sample, class_labels, world_size)
 
@@ -151,7 +153,12 @@ class Sampler:
             y_uncond = torch.randint(num_classes, num_classes + 1, (sample_size,), device=self.device)
             return torch.cat((y_cond, y_uncond), dim=0), z 
         return y_cond, z
-
+        
+    def _limited_interval_guidance(self, t_from, t_to, guidance_scale):
+        if t_from >= 0 and t_to > t_from:
+            return lambda t: guidance_scale if t_from <= t <= t_to else 1.0
+        return guidance_scale
+        
     def _process_sample(self, sample, vae):
         """Process and decode sample if using VAE."""
         if vae:
