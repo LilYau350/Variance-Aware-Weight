@@ -96,6 +96,9 @@ def parse_args():
     # Logging & Sampling
     parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")
     parser.add_argument("--solver", type=str, default="heun", choices=["ddim", "heun", "euler"], help="Choose sampler 'ddim', 'euler' or 'heun'")
+    parser.add_argument('--discretization', type=str, default='edm', choices=['vp', 've', 'iddpm', 'edm'], help='Discretization method for edm solver.')
+    parser.add_argument('--schedule', type=str, default='linear', choices=['vp', 've', 'linear'], help='Noise schedule for edm sampling.')
+    parser.add_argument('--scaling', type=str, default='none', choices=['vp', 'none'], help='Scaling strategy for model output in edm.')
     parser.add_argument("--sample_timesteps", type=int, default=18, help="Number of sample diffusion steps")
     parser.add_argument("--logdir", type=str, default='./logs', help="Log directory")
     parser.add_argument("--sample_size", type=int, default=64, help="Sampling size of images")
