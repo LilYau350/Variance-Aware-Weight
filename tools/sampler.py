@@ -175,6 +175,6 @@ class Sampler:
     def sample(self, num_samples, sample_size, image_size, num_classes, progress_bar=False):
         if self.args.solver == 'ddim':
             return self.ddim_sampler(num_samples, sample_size, image_size, num_classes, progress_bar)
-        # elif self.args.solver == "heun":
+        # elif self.args.solver == 'heun':
         else:
             return self.edm_sampler(num_samples, sample_size, image_size, num_classes, progress_bar)
