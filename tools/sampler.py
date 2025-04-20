@@ -160,7 +160,7 @@ class Sampler:
         return guidance_scale
         
     def _process_sample(self, sample, vae):
-        if not float_equal(self.args.guidance_scale, 1.0):
+        if not float_equal(self.args.guidance_scale, 1.0) and self.args.edm_solver != 'ddim'::
             sample, _ = sample.chunk(2, dim=0) # Remove null class samples       
         """Process and decode sample if using VAE."""
         if vae:
