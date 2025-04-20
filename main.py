@@ -95,7 +95,7 @@ def parse_args():
 
     # Logging & Sampling
     parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")
-    parser.add_argument("--sampler", type=str, default="heun", choices=["ddim", "heun"], help="Choose sampler between 'ddim' and 'heun'")
+    parser.add_argument("--solver", type=str, default="heun", choices=["ddim", "heun", "euler"], help="Choose sampler 'ddim', 'euler' or 'heun'")
     parser.add_argument("--sample_timesteps", type=int, default=18, help="Number of sample diffusion steps")
     parser.add_argument("--logdir", type=str, default='./logs', help="Log directory")
     parser.add_argument("--sample_size", type=int, default=64, help="Sampling size of images")
