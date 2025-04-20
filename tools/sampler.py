@@ -160,10 +160,10 @@ class Sampler:
         return guidance_scale
         
     def _process_sample(self, sample, vae):
+        if not float_equal(self.args.guidance_scale, 1.0):
+            sample, _ = sample.chunk(2, dim=0) # Remove null class samples       
         """Process and decode sample if using VAE."""
         if vae:
-            if not float_equal(self.args.guidance_scale, 1.0):
-                sample, _ = sample.chunk(2, dim=0)
             # Encoded with scale factor 0.18215. Decode by dividing by it for accurate reconstruction and to avoid FID errors.
             sample = vae.decode(sample.float() / 0.18215).sample
         return self._inverse_normalize(sample)
