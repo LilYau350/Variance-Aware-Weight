@@ -102,7 +102,8 @@ def parse_args():
     parser.add_argument("--sample_step", type=int, default=10000, help="Frequency of sampling")
     parser.add_argument("--use_classifier", type=str, default=None, help="Path to the pre-trained classifier model")
     parser.add_argument('--guidance_scale', type=float, default=1.0, help='Scale factor for classifier-free guidance')
-
+    parser.add_argument('--t_from', type=int, default=-1, help='Starting timestep for finite interval guidance (non-negative, >= 0). Set to -1 to disable interval guidance.')
+    parser.add_argument('--t_to', type=int, default=-1, help='Ending timestep for finite interval guidance (must be > t_from). Set to -1 to disable interval guidance.')
 
     # Evaluation
     parser.add_argument("--save_step", type=int, default=100000, help="Frequency of saving checkpoints, 0 to disable during training")
