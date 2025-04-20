@@ -75,7 +75,7 @@ def parse_args():
     parser.add_argument('--betas', type=float, nargs=2, default=(0.9, 0.999), help='Beta values for optimization')
     parser.add_argument("--weight_decay", type=float, default=0.0, help="Weight decay for the optimizer")
     parser.add_argument("--eps", type=float, default=1e-8, help="eps for the optimizer")
-    parser.add_argument("--latents_scale", type=float, default=0.18215, help="scaling factor for latent sample normalization. (0.18215 for unit variance)")
+    parser.add_argument("--latent_scale", type=float, default=0.18215, help="scaling factor for latent sample normalization. (0.18215 for unit variance)")
     parser.add_argument("--final_lr", type=float, default=0.0, help="Final learning rate")
     parser.add_argument("--grad_clip", type=float, default=None, help="Gradient norm clipping")
     parser.add_argument("--dropout", type=float, default=0.1, help='Dropout rate of resblock')
