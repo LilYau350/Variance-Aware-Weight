@@ -119,6 +119,7 @@ class Sampler:
             class_labels, z = self._prepare_labels(y_cond, num_classes, sample_size, z)
 
             sample = ablation_sampler(net, latents=z, num_steps=self.args.sample_timesteps, solver=self.args.solver,
+                                      discretization=self.args.discretization, schedule=self.args.schedule, scaling=self.args.scaling,
                                       class_labels=class_labels, guidance_scale=self.args.guidance_scale,)
             sample = self._process_sample(sample, vae)
             self._gather_samples(all_samples, all_labels, sample, class_labels, world_size)
@@ -165,7 +166,7 @@ class Sampler:
         return ((sample + 1) * 127.5).clamp(0, 255).to(torch.uint8).permute(0, 2, 3, 1).contiguous()
     
     def sample(self, num_samples, sample_size, image_size, num_classes, progress_bar=False):
-        if self.args.solver == "ddim":
+        if self.args.solver == 'ddim':
             return self.ddim_sampler(num_samples, sample_size, image_size, num_classes, progress_bar)
         # elif self.args.solver == "heun":
         else:
