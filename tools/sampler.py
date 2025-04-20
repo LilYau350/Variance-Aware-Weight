@@ -96,7 +96,7 @@ class Sampler:
 
         return all_samples, all_labels
 
-    def heun_sampler(self, num_samples, sample_size, image_size, num_classes, progress_bar=False):
+    def edm_sampler(self, num_samples, sample_size, image_size, num_classes, progress_bar=False):
         self.model.eval()
         all_samples, all_labels = [], []
         world_size = dist.get_world_size() if self.args.parallel else 1
@@ -169,4 +169,4 @@ class Sampler:
             return self.ddim_sampler(num_samples, sample_size, image_size, num_classes, progress_bar)
         # elif self.args.solver == "heun":
         else:
-            return self.heun_sampler(num_samples, sample_size, image_size, num_classes, progress_bar)
+            return self.edm_sampler(num_samples, sample_size, image_size, num_classes, progress_bar)
