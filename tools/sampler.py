@@ -165,7 +165,7 @@ class Sampler:
         """Process and decode sample if using VAE."""
         if vae:
             # Encoded with scale factor 0.18215. Decode by dividing by it for accurate reconstruction and to avoid FID errors.
-            sample = vae.decode(sample.float() / 0.18215).sample
+            sample = vae.decode(sample.float() / self.args.latent_scale).sample
         return self._inverse_normalize(sample)
     
     def _inverse_normalize(self, sample):
