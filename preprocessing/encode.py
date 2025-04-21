@@ -85,7 +85,7 @@ def load_imagenet(input, image_size, batch_size):
     val_dataset = datasets.ImageFolder(root=f"{input}/val", transform=transform)
     
     # Create DataLoader for batch processing
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
     
     return train_loader, val_loader
