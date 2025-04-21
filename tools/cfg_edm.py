@@ -40,7 +40,7 @@ class Net(torch.nn.Module):
         self.power = power
         self.model = model
         self.noise_schedule = noise_schedule
-        self.pred_type = pred_type  # 'eps', 'x0', or 'v', or 'u'
+        self.pred_type = pred_type  # 'eps', 'x0', or 'v'
 
         u = torch.zeros(M + 1)
         for j in range(M, 0, -1):  # M, ..., 1
