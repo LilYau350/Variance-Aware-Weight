@@ -6,16 +6,14 @@ import copy
 import math
 import random
 import warnings
-
 import torch
 import numpy as np
-from tools.utils import *
 from tqdm import trange
 import torch.optim as optim
 import torch.distributed as dist
 from torch.utils.data import DistributedSampler
 from torchvision.utils import make_grid, save_image
-
+from tools.utils import *
 from tools import dist_util, logger
 from evaluations.evaluator import Evaluator
 import tensorflow.compat.v1 as tf  # type: ignore
@@ -41,7 +39,7 @@ model_variants = [
     "ViT-S", "ViT-B", "ViT-L", "ViT-XL",
     "DiT-S", "DiT-B", "DiT-L", "DiT-XL",
     "U-ViT-S", "U-ViT-S-D", "U-ViT-M", "U-ViT-L", "U-ViT-H"]
-     
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Train and evaluate guided diffusion models")
     # Enable/Disable Training and Evaluation
@@ -49,7 +47,7 @@ def parse_args():
     parser.add_argument("--eval", default=True, type=str2bool, help="Load checkpoint and evaluate FID...")
 
     parser.add_argument("--data_dir", type=str, default='./data', help="Path to the dataset directory")
-    parser.add_argument("--dataset", type=str, default='CIFAR-10', choices=['CIFAR-10', 'CelebA', 'ImageNet', 'LSUN', 'Latent'], help="Dataset to train on")
+    parser.add_argument("--dataset", type=str, default='CIFAR-10', choices=['CIFAR-10', 'Gaussian', 'CelebA', 'ImageNet', 'LSUN', 'Latent'], help="Dataset to train on")
     parser.add_argument("--patch_size", type=int, default=None, help="Patch Size for ViT, DiT, U-ViT, type is int")
     parser.add_argument("--in_chans", type=int, default=3, help="Number of input channels for the model")
     parser.add_argument("--image_size", type=int, default=32, help="Image size")
@@ -60,14 +58,13 @@ def parse_args():
     # Gaussian Diffusion
     parser.add_argument("--beta_schedule", type=str, default='cosine', help="Beta schedule type 'linear', 'cosine', 'laplace', and 'power'.")
     parser.add_argument("--p", type=float, default=2, help="power for power schedule.")
-    parser.add_argument("--beta_1", type=float, default=1e-4, help="Starting value of beta for the diffusion process")
-    parser.add_argument("--beta_T", type=float, default=0.02, help="Ending value of beta for the diffusion process")
     parser.add_argument("--T", type=int, default=1000, help="Number of diffusion steps")
-    parser.add_argument("--mean_type", type=str, default='EPSILON', choices=['PREVIOUS_X', 'START_X', 'EPSILON', 'VELOCITY'], help="Predict variable")
+    parser.add_argument("--mean_type", type=str, default='EPSILON', choices=['PREVIOUS_X', 'START_X', 'EPSILON', 'VELOCITY', 'UNRAVEL'], help="Predict variable")
     parser.add_argument("--var_type", type=str, default='FIXED_LARGE', choices=['FIXED_LARGE', 'FIXED_SMALL', 'LEARNED', 'LEARNED_RANGE'], help="Variance type")
     parser.add_argument("--loss_type", type=str, default='MSE', choices=['MSE', 'RESCALED_MSE', 'KL', 'RESCALED_KL'], help="Loss type")
     parser.add_argument("--weight_type", type=str, default='constant', help="'constant', 'lambda', 'min_snr_k','vmin_snr_k', 'max_snr_k' 'debias', where k is a positive integer.")
     parser.add_argument("--mapping", type=str2bool, default=False, help="Enable mapped MSE loss (default: False)")
+    parser.add_argument("--gamma", type=float, default=0, help="Factor for loss regularization")
     parser.add_argument("--p2_gamma", type=int, default=1, help="hyperparameter for P2 weight")
     parser.add_argument("--p2_k", type=int, default=1, help="hyperparameter for P2 weight")
 
@@ -91,7 +88,7 @@ def parse_args():
     parser.add_argument("--cosine_decay", default=True, type=str2bool, help="Whether to use cosine learning rate decay")
     parser.add_argument("--class_cond", default=False, type=str2bool, help="Set class_cond to enable class-conditional generation.")
     parser.add_argument("--learn_sigma", default=False, type=str2bool, help="Set learn_sigma to enable learn distribution sigma.")
-    parser.add_argument("--parallel", default=True, type=str2bool, help="Use multi-GPU training")
+    parser.add_argument("--parallel", default=False, type=str2bool, help="Use multi-GPU training")
     parser.add_argument('--amp', default=True, type=str2bool, help='Use AMP for mixed precision training')
     parser.add_argument('--resume', type=str, default=None, help='Path to the checkpoint to resume from')
 
@@ -109,7 +106,7 @@ def parse_args():
     parser.add_argument('--guidance_scale', type=float, default=1.0, help='Scale factor for classifier-free guidance')
     parser.add_argument('--t_from', type=int, default=-1, help='Starting timestep for finite interval guidance (non-negative, >= 0). Set to -1 to disable interval guidance.')
     parser.add_argument('--t_to', type=int, default=-1, help='Ending timestep for finite interval guidance (must be > t_from). Set to -1 to disable interval guidance.')
-
+    
     # Evaluation
     parser.add_argument("--save_step", type=int, default=100000, help="Frequency of saving checkpoints, 0 to disable during training")
     parser.add_argument("--eval_step", type=int, default=50000, help="Frequency of evaluating model, 0 to disable during training")
@@ -119,55 +116,6 @@ def parse_args():
     args = parser.parse_args()    
     return args
 
-def str2bool(v):
-    if isinstance(v, bool):
-        return v
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
-        return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
-        return False
-    else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
-
-def get_lr_lambda(args):
-    return lambda step: warmup_cosine_lr(
-        step, args.warmup_steps, args.total_steps,
-        args.lr, args.final_lr, args.cosine_decay)
-
-def save_checkpoint(args, step, model, optimizer, ema_model=None):
-    if dist_util.is_main_process():
-        # condition_type = 'supervised' if args.class_cond else 'unsupervised'
-        checkpoint_dir = os.path.join('checkpoint', args.dataset, args.model)
-        os.makedirs(checkpoint_dir, exist_ok=True)
-        state = {
-            'model': model.state_dict(),
-            'optimizer': optimizer.state_dict(),
-            'step': step
-        }
-        if ema_model is not None:
-            state['ema_model'] = ema_model.state_dict()
-        filename = f"{args.mean_type}_{args.weight_type}_{args.beta_schedule}"
-        
-        if args.beta_schedule == "power":
-            filename += f"_{args.p}"
-            
-        filename += f"_{step}.pth"
-        filename = os.path.join(checkpoint_dir, filename)
-        torch.save(state, filename)
-        print(f"Checkpoint saved: {filename}")
-
-def load_checkpoint(ckpt_path, model=None, optimizer=None, ema_model=None):
-    if dist_util.is_main_process():
-        print('==> Resuming from checkpoint..')
-    assert os.path.exists(ckpt_path), 'Error: checkpoint {} not found'.format(ckpt_path)
-    checkpoint = torch.load(ckpt_path)
-    if model:
-        model.load_state_dict(checkpoint['model'])
-    if optimizer:
-        optimizer.load_state_dict(checkpoint['optimizer'])
-    if ema_model and 'ema_model' in checkpoint:
-        ema_model.load_state_dict(checkpoint['ema_model'])
-    return checkpoint
 
 def build_dataset(args):
     if args.dataset == 'CIFAR-10':
@@ -214,6 +162,7 @@ def build_dataset(args):
         
     return train_loader, test_loader
 
+
 def build_model(args):
     unet_models = {
         "UNet-32": UNet_32,"ADM-32": ADM_32, "ADM-64": ADM_64, "ADM-128": ADM_128, 
@@ -254,6 +203,7 @@ def build_model(args):
     
     return model
 
+
 def build_diffusion(args, use_ddim=False):
 
     betas = get_named_beta_schedule(args.beta_schedule, args.T, args.p)
@@ -272,6 +222,7 @@ def build_diffusion(args, use_ddim=False):
         rescale_timesteps=True,
         mse_loss_weight_type=args.weight_type,
         mapping=args.mapping,
+        gamma=args.gamma,
         p2_gamma = args.p2_gamma,
         p2_k = args.p2_k
     )
@@ -282,118 +233,8 @@ def build_diffusion(args, use_ddim=False):
             **diffusion_kwargs)
     else:
         return GaussianDiffusion(**diffusion_kwargs)
-
-def set_random_seed(args, seed):
-    rank = dist.get_rank() if args.parallel else 0
-    seed = seed + rank
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    
-def warmup_cosine_lr(step, warmup_steps, total_steps, lr, final_lr, cosine_decay):
-    if step < warmup_steps:
-        return min(step, warmup_steps) / warmup_steps
-    else:
-        if cosine_decay:
-            progress = (step - warmup_steps) / (total_steps - warmup_steps)
-            cosine_decay = 0.5 * (1 + math.cos(math.pi * progress))
-            return (final_lr + (lr - final_lr) * cosine_decay) / lr
-        else:
-            return 1
            
-def save_metrics_to_csv(args, eval_dir, metrics, step):
-    params = (
-        f"{args.dataset}_{args.model}_"
-        + (f"patch_{args.patch_size}_" if args.patch_size else "")
-        + f"lr_{args.lr}_"  
-        + (f"lr_decay_{args.cosine_decay}_" if args.cosine_decay else "")        
-        + f"dropout_{args.dropout}_"
-        + f"drop_label_{args.drop_label_prob}_"
-        + f"sample_t_{args.sample_timesteps}_"
-        + f"cfg_{args.guidance_scale}_"
-        + f"beta_sched_{args.beta_schedule}_" + (f"{args.p}_" if args.beta_schedule == 'power' else "")
-        + f"target_{args.mean_type}_"
-        + f"weight_{args.weight_type}_"  
-        + ("cond_" if args.class_cond else "")
-        )
-
-    params = re.sub(r'[^\w\-_\. ]', '_', params).rstrip('_')
-
-    csv_filename = os.path.join(eval_dir, f"{params}.csv")
-    file_exists = os.path.isfile(csv_filename)
-    
-    with open(csv_filename, 'a', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        if not file_exists:
-            writer.writerow(['Step'] + list(metrics.keys()))
-        writer.writerow([step] + list(metrics.values()))
-
-def sample_and_save(args, step, device, eval_model, sample_diffusion, save_grid=False):
-    """Sample images from the model and either save them as a grid or for evaluation."""
-    classifier = Classifier(args, device, eval_model) if args.use_classifier else None
-    sampler = Sampler(args, device, eval_model, sample_diffusion, classifier=classifier)
-    
-    with torch.no_grad():
-        all_samples, all_labels = sampler.sample(
-            num_samples=args.num_samples if not save_grid else args.sample_size, 
-            sample_size=args.sample_size, 
-            image_size=args.image_size, 
-            num_classes=args.num_classes, 
-            progress_bar=not save_grid,)
-
-    if dist_util.is_main_process():
-        arr = np.concatenate(all_samples, axis=0)
-        arr = arr[: args.num_samples if not save_grid else args.sample_size]    
-        #condition_type = 'supervised' if args.class_cond else 'unsupervised'
         
-        if save_grid:
-            # Save as grid image if 'save_grid' is True
-            torch_samples = torch.from_numpy(arr).permute(0, 3, 1, 2).float() / 255.0
-            grid = make_grid(torch_samples, pad_value=0.5)
-            sample_dir = os.path.join(args.logdir, args.dataset, 'sample')
-            os.makedirs(sample_dir, exist_ok=True)
-            path = os.path.join(sample_dir, f'{step}.png')
-            save_image(grid, path)
-        else:
-            # Save for evaluation purposes
-            # sample_dir = os.path.join(args.logdir, args.dataset, 'generate_sample', f"{args.mean_type}_{condition_type}",)
-            sample_dir = os.path.join(args.logdir, args.dataset, 'generate_sample', args.mean_type)
-            os.makedirs(sample_dir, exist_ok=True)
-            shape_str = "x".join([str(x) for x in arr.shape[1:3]])
-            p = f"_{args.p}" if args.beta_schedule == "power" else ''
-            out_path = os.path.join(sample_dir, f"{args.dataset}_{shape_str}_{args.model}_{args.weight_type}_{args.beta_schedule}{p}_samples.npz")
-            
-            if args.class_cond:
-                label_arr = np.concatenate(all_labels, axis=0)[: args.num_samples]
-                np.savez(out_path, arr, label_arr)
-            else:
-                np.savez(out_path, arr)
-            print(f"Evaluation samples saved at {out_path}")
-
-        return arr  # Return the sampled images array for evaluation
-
-    return None
-        
-def calculate_metrics(args, step, device, eval_model, sample_diffusion, evaluator, ref_stats):
-    # Sample images and get the array
-    arr = sample_and_save(args, step, device, eval_model, sample_diffusion)
-    
-    if dist_util.is_main_process():
-        # Calculate metrics if in evaluation mode
-        batches = [np.array(arr[i:i + args.sample_size]) for i in range(0, len(arr), args.sample_size)]
-        sample_acts = evaluator.compute_activations(batches)
-        sample_stats = evaluator.compute_statistics(sample_acts[0])
-        is_score = evaluator.compute_inception_score(sample_acts[0])    
-        fid = sample_stats.frechet_distance(ref_stats)
-        return is_score, fid
-    
-    return None, None
-
 def eval(args, **kwargs):
     device, model, ema_model, sample_diffusion, evaluator, ref_stats, eval_dir, step = (
         kwargs['device'], kwargs['model'], kwargs['ema_model'], kwargs['sample_diffusion'], 
@@ -444,8 +285,9 @@ def train(args, **kwargs):
             loss = trainer.train_step(step)      
             # Sample and save images
             if args.sample_step > 0 and step % args.sample_step == 0:
-                sample_and_save(args, step, device, ema_model, sample_diffusion, save_grid=True)
-                    
+                # sample_and_save(args, step, device, ema_model, sample_diffusion, save_grid=True)
+                generate_samples(args, step, device, ema_model, sample_diffusion, save_grid=True)
+                
             # Save checkpoint
             if args.save_step > 0 and step % args.save_step == 0 and step > 0:
                 if dist_util.is_main_process():
@@ -471,7 +313,7 @@ def init(args):
     train_loader, _ = build_dataset(args)
     
     diffusion = build_diffusion(args, use_ddim=False)
-    sample_diffusion = build_diffusion(args, use_ddim=True)    
+    sample_diffusion = build_diffusion(args, use_ddim=True)
     
     if args.eval and not args.train:
         ema_model = build_model(args).to(device)
@@ -537,4 +379,4 @@ def main():
         dist_util.cleanup_dist()
         
 if __name__ == "__main__":
-    main()
+    main()                                                                                                          
