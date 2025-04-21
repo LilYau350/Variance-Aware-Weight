@@ -59,7 +59,7 @@ class Trainer:
         if dist_util.is_main_process():
             ema(self.model, self.ema_model, self.args.ema_decay)
                 
-    def _sample_from_latent(latent, latent_scale=1.):
+    def _sample_from_latent(self, latent, latent_scale=1.):
         mean, std = torch.chunk(latent, 2, dim=1)
         latent_samples = mean + std * torch.randn_like(mean)
         latent_samples = latent_samples * latent_scale 
@@ -76,7 +76,7 @@ class Trainer:
         for accumulation_step in range(grad_accumulation):
             images, labels = self._get_next_batch()
             
-            if self.args.in_chanse == 4:
+            if self.args.in_chans == 4:
                 images = self._sample_from_latent(images, self.args.latent_scale)  
                 
             if self.args.amp:
