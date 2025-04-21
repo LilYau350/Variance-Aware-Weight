@@ -9,13 +9,15 @@ import os
 from PIL import Image
 import lmdb
 import numpy as np
-
+from tqdm import tqdm 
 
 def read_images(lmdb_path, image_size):
     env = lmdb.open(lmdb_path, map_size=1099511627776, max_readers=100, readonly=True)
     with env.begin(write=False) as transaction:
         cursor = transaction.cursor()
-        for _, webp_data in cursor:
+        total_images = transaction.stat()['entries']
+        # for _, webp_data in cursor:
+        for _, webp_data in tqdm(cursor, total=total_images, desc="Reading images"):
             img = Image.open(io.BytesIO(webp_data))
             width, height = img.size
             scale = image_size / min(width, height)
