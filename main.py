@@ -358,15 +358,14 @@ def init(args):
         # This will cause TF to print a bunch of verbose stuff now rather
         # than after the next print(), to help prevent confusion.
         evaluator.warmup()
-        # print("reading reference batch statistic...")
-        # ref_stats, _ = evaluator.read_statistics(args.ref_batch, None)
+
         print("computing reference batch activations...")
         ref_acts = evaluator.read_activations(args.ref_batch)
         print("computing/reading reference batch statistics...")
         ref_stats, ref_stats_spatial = evaluator.read_statistics(args.ref_batch, ref_acts)
+        
         os.makedirs(eval_dir, exist_ok=True)
     else:
-        # ref_stats = None
         ref_acts, ref_stats, ref_stats_spatial = None, None, None
 
     if args.parallel:
