@@ -205,6 +205,7 @@ class GaussianDiffusion:
         rescale_timesteps=False,
         mse_loss_weight_type='constant',
         mapping=False,
+        gamma,
         p2_gamma=1,
         p2_k=1,
     ):
@@ -214,7 +215,7 @@ class GaussianDiffusion:
         self.rescale_timesteps = rescale_timesteps
         self.mse_loss_weight_type = mse_loss_weight_type
         self.mapping = mapping
-        
+        self.gamma = gamma      
         # P2 weighting
         self.p2_gamma = p2_gamma
         self.p2_k = p2_k
@@ -992,9 +993,15 @@ class GaussianDiffusion:
                 mse_loss_weight = self.weight(raw_mse.detach())
                 
             terms["mse"] = mse_loss_weight * raw_mse
-            
+
+            if self.gamma > 0:
+                regularization = self.regularization(model_output, target)
+                terms["reg"] = self.gamma * regularization  
+                
             if "vb" in terms:
                 terms["loss"] = terms["mse"] + terms["vb"]
+            elif self.gamma > 0:
+                 terms["loss"] = terms["mse"] + terms["reg"]
             else:
                 terms["loss"] = terms["mse"]
         else:
@@ -1008,6 +1015,14 @@ class GaussianDiffusion:
         weight = th.sigmoid(raw_mse)
         return weight
 
+    def regularization(self, model_output):
+        batch_size = model_output.size(0)  
+        flattened_output = model_output.view(batch_size, -1)  
+        normalized_output = flattened_output / th.norm(flattened_output, p=2, dim=1, keepdim=True)
+        cosine_similarity_matrix = th.mm(normalized_output, normalized_output.T)  
+        avg_cosine_similarity = th.sum(cosine_similarity_matrix) / (batch_size ** 2)
+        return - avg_cosine_similarity
+        
     def _prior_bpd(self, x_start):
         """
         Get the prior KL term for the variational lower-bound, measured in
