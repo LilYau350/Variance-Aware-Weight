@@ -5,7 +5,7 @@ torchrun  --nproc_per_node=2 main.py --train True --eval True --data_dir './Cele
           --beta_schedule 'cosine' --loss_type 'MSE' --weight_type 'lambda' --sampler_type 'uniform' --mapping False \
           --warmup_steps 5000 --cosine_decay False --class_cond True --parallel True --amp True \
           --sample_timesteps 20 --guidance_scale 1.0 --save_step 100000 --eval_step 50000 \
-          --fid_cache './reference_batches/fid_stats_celeba_train.npz'
+          --ref_batch './reference_batches/fid_stats_celeba_train.npz'
 
 # ImageNet 32×32×4 DiT 
 CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 main.py --train True --eval True --data_dir './ImageNet/ImageNet_256/ImageNet.h5' --dataset 'Latent' \
@@ -14,7 +14,7 @@ CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 main.py --train True --ev
           --beta_schedule 'linear' --loss_type 'MSE' --weight_type 'constant' --sampler_type 'uniform' --mapping False \
           --warmup_steps 0 --cosine_decay False --class_cond True --parallel True --amp False  --sample_size 16 \
           --sample_timesteps 50 --guidance_scale 1.0 --sample_step 50000 --num_samples 50000 --save_step 50000 --eval_step 50000 \
-          --fid_cache './reference_batches/VIRTUAL_imagenet256_labeled.npz' 
+          --ref_batch './reference_batches/VIRTUAL_imagenet256_labeled.npz' 
 
 # note 
 # In trainer.py#L76, We can modify trainer.py (autocast()) as with autocast(dtype=torch.bfloat16). BP16 would be more stable than FP16.
