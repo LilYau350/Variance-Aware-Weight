@@ -161,7 +161,7 @@ class Evaluator:
             np.concatenate(preds, axis=0),
             np.concatenate(spatial_preds, axis=0),
         )
-    '''
+
     def read_statistics(
         self, npz_path: str, activations: Tuple[np.ndarray, np.ndarray]
     ) -> Tuple[FIDStatistics, FIDStatistics]:
@@ -171,18 +171,6 @@ class Evaluator:
                 obj["mu_s"], obj["sigma_s"]
             )
         return tuple(self.compute_statistics(x) for x in activations)
-    '''
-    def read_statistics(
-        self, npz_path: str, activations: Tuple[np.ndarray, np.ndarray]
-    ) -> Tuple[FIDStatistics, Optional[FIDStatistics]]:
-        obj = np.load(npz_path)
-        if "mu" in obj.keys() and "sigma" in obj.keys():
-            mu_s = obj["mu_s"] if "mu_s" in obj.keys() else None
-            sigma_s = obj["sigma_s"] if "sigma_s" in obj.keys() else None
-            return FIDStatistics(obj["mu"], obj["sigma"]), (FIDStatistics(mu_s, sigma_s) if mu_s is not None and sigma_s is not None else None)
-        else:
-            print(f"Missing keys in {npz_path}. Computing statistics from activations instead.")
-            return tuple(self.compute_statistics(x) for x in activations)
 
     def compute_statistics(self, activations: np.ndarray) -> FIDStatistics:
         mu = np.mean(activations, axis=0)
@@ -353,8 +341,8 @@ class ManifoldEstimator:
                  - precision: an np.ndarray of length K1
                  - recall: an np.ndarray of length K2
         """
-        features_1_status = np.zeros([len(features_1), radii_2.shape[1]], dtype=np.bool)
-        features_2_status = np.zeros([len(features_2), radii_1.shape[1]], dtype=np.bool)
+        features_1_status = np.zeros([len(features_1), radii_2.shape[1]], dtype=bool)
+        features_2_status = np.zeros([len(features_2), radii_1.shape[1]], dtype=bool)
         for begin_1 in range(0, len(features_1), self.row_batch_size):
             end_1 = begin_1 + self.row_batch_size
             batch_1 = features_1[begin_1:end_1]
