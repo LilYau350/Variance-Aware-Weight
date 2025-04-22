@@ -89,6 +89,7 @@ def load_checkpoint(ckpt_path, model=None, optimizer=None, ema_model=None):
         ema_model.load_state_dict(checkpoint['ema_model'])
     return checkpoint
 
+
 def generate_samples(args, step, device, eval_model, sample_diffusion, save_grid=False):
     """Sample images from the model and either save them as a grid or for evaluation."""
     classifier = Classifier(args, device, eval_model) if args.use_classifier else None
@@ -102,7 +103,7 @@ def generate_samples(args, step, device, eval_model, sample_diffusion, save_grid
             num_classes=args.num_classes, 
             progress_bar=not save_grid,)
         
-    save_images(args, step, all_samples,all_labels, save_grid)    
+    return save_images(args, step, all_samples,all_labels, save_grid)    
     
     
 def save_images(args, step, samples, labels, save_grid=False):
@@ -139,6 +140,29 @@ def save_images(args, step, samples, labels, save_grid=False):
     return None    
 
 
+def calculate_metrics(args, eval_model, **kwargs):
+    
+    step, device, sample_diffusion, evaluator, ref_acts, ref_stats, ref_stats_spatial = (
+        kwargs['step'], kwargs['device'],  kwargs['sample_diffusion'], kwargs['evaluator'], 
+        kwargs['ref_acts'], kwargs['ref_stats'], kwargs['ref_stats_spatial'])
+    
+    # Sample images and get the array
+    arr = generate_samples(args, step, device, eval_model, sample_diffusion)
+    if dist_util.is_main_process():
+        # Calculate metrics if in evaluation mode
+        sample_batch = [np.array(arr[i:i + args.sample_size]) for i in range(0, len(arr), args.sample_size)]
+        sample_acts = evaluator.compute_activations(sample_batch)
+
+        sample_stats, sample_stats_spatial = tuple(evaluator.compute_statistics(x) for x in sample_acts)
+        is_score = evaluator.compute_inception_score(sample_acts[0])   
+        fid = sample_stats.frechet_distance(ref_stats)
+        sfid = sample_stats_spatial.frechet_distance(ref_stats_spatial)
+        pre, rec = evaluator.compute_prec_recall(ref_acts[0], sample_acts[0])
+        return is_score, fid, sfid, pre, rec
+    
+    return None, None, None, None, None
+
+
 def save_metrics_to_csv(args, eval_dir, metrics, step):
     params = (
         f"{args.dataset}_{args.model}_"
@@ -164,19 +188,6 @@ def save_metrics_to_csv(args, eval_dir, metrics, step):
         writer = csv.writer(csvfile)
         if not file_exists:
             writer.writerow(['Step'] + list(metrics.keys()))
-        writer.writerow([step] + list(metrics.values()))
-
-def calculate_metrics(args, step, device, eval_model, sample_diffusion, evaluator, ref_stats):
-    # Sample images and get the array
-    # arr = sample_and_save(args, step, device, eval_model, sample_diffusion)
-    arr = generate_samples(args, step, device, eval_model, sample_diffusion)
-    if dist_util.is_main_process():
-        # Calculate metrics if in evaluation mode
-        batches = [np.array(arr[i:i + args.sample_size]) for i in range(0, len(arr), args.sample_size)]
-        sample_acts = evaluator.compute_activations(batches)
-        sample_stats = evaluator.compute_statistics(sample_acts[0])
-        is_score = evaluator.compute_inception_score(sample_acts[0])    
-        fid = sample_stats.frechet_distance(ref_stats)
-        return is_score, fid
-    
-    return None, None
+        # writer.writerow([step] + list(metrics.values()))
+        formatted_values = [f"{value:.2f}" if isinstance(value, (float, int)) else value for value in metrics.values()]
+        writer.writerow([step] + formatted_values)
