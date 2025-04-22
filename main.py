@@ -111,7 +111,7 @@ def parse_args():
     parser.add_argument("--save_step", type=int, default=100000, help="Frequency of saving checkpoints, 0 to disable during training")
     parser.add_argument("--eval_step", type=int, default=50000, help="Frequency of evaluating model, 0 to disable during training")
     parser.add_argument("--num_samples", type=int, default=50000, help="The number of generated images for evaluation")
-    parser.add_argument("--ref_batch", type=str, default='./reference_batches/fid_stats_cifar_train.npz', help="ref_batch")
+    parser.add_argument("--ref_batch", type=str, default='./reference_batches/fid_stats_cifar_train.npz', help="FID cache")
 
     args = parser.parse_args()    
     return args
@@ -234,36 +234,38 @@ def build_diffusion(args, use_ddim=False):
     else:
         return GaussianDiffusion(**diffusion_kwargs)
            
-        
+           
 def eval(args, **kwargs):
-    device, model, ema_model, sample_diffusion, evaluator, ref_stats, eval_dir, step = (
-        kwargs['device'], kwargs['model'], kwargs['ema_model'], kwargs['sample_diffusion'], 
-        kwargs['evaluator'], kwargs['ref_stats'], kwargs['eval_dir'], kwargs['step'])
+    model, ema_model, eval_dir, step = (kwargs['model'], kwargs['ema_model'], kwargs['eval_dir'], kwargs['step'])
     # Evaluate net_model and ema_model
-    # net_is_score, net_fid = calculate_metrics(args, step, device, model, sample_diffusion, evaluator, ref_stats)
+    # net_is_score, net_fid, net_sfid, net_pre, net_rec = calculate_metrics(args, model, **kwargs)
     # if dist_util.is_main_process():
-    #     print(f"Model(NET): IS:{net_is_score:.3f}, FID:{net_fid:.3f}")
-    ema_is_score, ema_fid = calculate_metrics(args, step, device, ema_model, sample_diffusion, evaluator, ref_stats)
+    #     print(f"Model(NET): IS:{net_is_score:.2f}, FID:{net_fid:.2f}, sFID:{net_sfid:.2f}, Pre.:{net_pre:.2f}, Rec.:{net_rec:.2f}")
+    ema_is_score, ema_fid, ema_sfid, ema_pre, ema_rec = calculate_metrics(args, ema_model, **kwargs)
     if dist_util.is_main_process():
-        print(f"Model(EMA): IS:{ema_is_score:.3f}, FID:{ema_fid:.3f}")
+        print(f"Model(EMA): IS:{ema_is_score:.2f}, FID:{ema_fid:.2f}, sFID:{ema_sfid:.2f}, Pre:{ema_pre:.2f}, Rec:{ema_rec:.2f}")
         
     metrics = {
-        #'IS': net_is_score,
-        #'FID': net_fid,
-        'IS_EMA': ema_is_score,
-        'FID_EMA': ema_fid,
+        # 'IS (Net)': net_is_score,
+        # 'FID (Net)': net_fid,
+        # 'sFID (Net)': net_sfid,        
+        # 'Precision (Net)': net_pre,
+        # 'Recall (Net)': net_rec,
+        'IS (EMA)': ema_is_score,
+        'FID (EMA)': ema_fid,
+        'sFID (EMA)': ema_sfid,        
+        'Pre. (EMA)': ema_pre,
+        'Rec. (EMA)': ema_rec,
     }
     if dist_util.is_main_process():
         save_metrics_to_csv(args, eval_dir, metrics, step)
                 
 def train(args, **kwargs):
     
-    model, ema_model, checkpoint, diffusion, sample_diffusion, train_loader, optimizer, scheduler, \
-    evaluator, ref_stats, eval_dir, device = (
+    model, ema_model, checkpoint, diffusion, sample_diffusion, train_loader, optimizer, scheduler, device = (
         kwargs['model'], kwargs['ema_model'], kwargs['checkpoint'], 
         kwargs['diffusion'], kwargs['sample_diffusion'], kwargs['train_loader'],
-        kwargs['optimizer'], kwargs['scheduler'], kwargs['evaluator'],
-        kwargs['ref_stats'], kwargs['eval_dir'], kwargs['device']
+        kwargs['optimizer'], kwargs['scheduler'], kwargs['device']
     )
     
     # model.train()
@@ -287,20 +289,20 @@ def train(args, **kwargs):
             if args.sample_step > 0 and step % args.sample_step == 0:
                 # sample_and_save(args, step, device, ema_model, sample_diffusion, save_grid=True)
                 generate_samples(args, step, device, ema_model, sample_diffusion, save_grid=True)
-                
+    
             # Save checkpoint
             if args.save_step > 0 and step % args.save_step == 0 and step > 0:
                 if dist_util.is_main_process():
                     save_checkpoint(args, step, model, optimizer, ema_model=ema_model)  
-                    
-            if args.parallel: 
-                dist.barrier()     
-            
+        
             # Evaluate
             if args.eval and args.eval_step > 0 and step % args.eval_step == 0 and step > 0:
-                eval(args, **{**kwargs, 'step': step})      
+                eval(args, **{**kwargs, 'step': step})  
+                
+            if args.parallel: 
+                dist.barrier()                        
 
-            
+
 def init(args):
     if args.parallel:
         dist_util.setup_dist()  
@@ -352,19 +354,28 @@ def init(args):
 
     eval_dir = os.path.join(args.logdir, args.dataset, 'evaluate')
     if dist_util.is_main_process():
-        print("reading reference batch statistic...")
-        ref_stats, _ = evaluator.read_statistics(args.ref_batch, None)
+        print("warming up TensorFlow...")
+        # This will cause TF to print a bunch of verbose stuff now rather
+        # than after the next print(), to help prevent confusion.
+        evaluator.warmup()
+        # print("reading reference batch statistic...")
+        # ref_stats, _ = evaluator.read_statistics(args.ref_batch, None)
+        print("computing reference batch activations...")
+        ref_acts = evaluator.read_activations(args.ref_batch)
+        print("computing/reading reference batch statistics...")
+        ref_stats, ref_stats_spatial = evaluator.read_statistics(args.ref_batch, ref_acts)
         os.makedirs(eval_dir, exist_ok=True)
     else:
-        ref_stats = None
+        # ref_stats = None
+        ref_acts, ref_stats, ref_stats_spatial = None, None, None
 
     if args.parallel:
         dist.barrier()
 
     return {
-        'device': device, 'train_loader': train_loader, 'model': model, 'ema_model': ema_model, 
-        'checkpoint': checkpoint,'diffusion': diffusion, 'sample_diffusion': sample_diffusion, 'optimizer': optimizer, 
-        'scheduler': scheduler,'evaluator': evaluator, 'ref_stats': ref_stats, 'eval_dir': eval_dir, 'step': step }
+        'device': device, 'train_loader': train_loader, 'model': model, 'ema_model': ema_model, 'checkpoint': checkpoint,
+        'diffusion': diffusion, 'sample_diffusion': sample_diffusion, 'optimizer': optimizer, 'scheduler': scheduler,'evaluator': evaluator, 
+        'ref_acts': ref_acts, 'ref_stats': ref_stats, 'ref_stats_spatial': ref_stats_spatial, 'eval_dir': eval_dir, 'step': step }
 
 def main():
     args = parse_args()
