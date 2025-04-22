@@ -7,6 +7,7 @@ from tools import dist_util
 from .cfg_edm import ablation_sampler, float_equal, Net
 from models.unet import EncoderUNetModel
 
+
 class Classifier:
     def __init__(self, args, device, model):
         self.args = args
@@ -55,7 +56,7 @@ def sync_ema_model(eval_model):
 
 class Sampler:
     def __init__(self, args, device, eval_model, diffusion, classifier=None):
-        self.args = args
+        self.args = args     
         self.device = device
         self.model = eval_model
         self.diffusion = diffusion      
@@ -76,7 +77,7 @@ class Sampler:
         if progress_bar and dist_util.is_main_process():
             pbar = tqdm(total=num_samples, desc="Generating Samples (DDIM)")
             
-        vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{self.args.vae}").to(self.device) if self.args.in_chans == 4 else None
+        vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{self.args.vae}", local_files_only=True).to(self.device) if self.args.in_chans == 4 else None
         
         while len(all_samples) * sample_size < num_samples:
             classes = torch.randint(0, num_classes, (sample_size,), device=self.device) if self.args.class_cond else None
@@ -108,7 +109,7 @@ class Sampler:
         if progress_bar and dist_util.is_main_process():
             pbar = tqdm(total=num_samples, desc=f"Generating Samples ({self.args.solver.capitalize()})")
 
-        vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{self.args.vae}").to(self.device) if self.args.in_chans == 4 else None
+        vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{self.args.vae}", local_files_only=True).to(self.device) if self.args.in_chans == 4 else None
         net = Net(model=self.model, img_channels=self.args.in_chans, img_resolution=image_size, label_dim=num_classes,
                   noise_schedule=self.args.beta_schedule, amp=self.args.amp, power=self.args.p,
                   pred_type=self.args.mean_type).to(self.device)
@@ -117,9 +118,9 @@ class Sampler:
             y_cond = torch.randint(0, num_classes, (sample_size,), device=self.device) if self.args.class_cond else None
             z = torch.randn([sample_size, net.img_channels, net.img_resolution, net.img_resolution], device=self.device)
             class_labels, z = self._prepare_labels(y_cond, num_classes, sample_size, z)
-            
+
             guidance_scale = self._limited_interval_guidance(self.args.t_from, self.args.t_to, self.args.guidance_scale)
-            
+
             sample = ablation_sampler(net, latents=z, num_steps=self.args.sample_timesteps, solver=self.args.solver,
                                       discretization=self.args.discretization, schedule=self.args.schedule, scaling=self.args.scaling,
                                       class_labels=class_labels, guidance_scale=guidance_scale,)
@@ -153,14 +154,14 @@ class Sampler:
             y_uncond = torch.randint(num_classes, num_classes + 1, (sample_size,), device=self.device)
             return torch.cat((y_cond, y_uncond), dim=0), z 
         return y_cond, z
-        
+
     def _limited_interval_guidance(self, t_from, t_to, guidance_scale):
         if t_from >= 0 and t_to > t_from:
             return lambda t: guidance_scale if t_from <= t <= t_to else 1.0
         return guidance_scale
-        
+
     def _process_sample(self, sample, vae):
-        if not float_equal(self.args.guidance_scale, 1.0) and self.args.edm_solver != 'ddim'::
+        if not float_equal(self.args.guidance_scale, 1.0) and self.args.edm_solver != 'ddim':
             sample, _ = sample.chunk(2, dim=0) # Remove null class samples       
         """Process and decode sample if using VAE."""
         if vae:
@@ -172,9 +173,10 @@ class Sampler:
         """Inverse the normalization to bring the sample back to the original image range."""
         return ((sample + 1) * 127.5).clamp(0, 255).to(torch.uint8).permute(0, 2, 3, 1).contiguous()
     
+    
     def sample(self, num_samples, sample_size, image_size, num_classes, progress_bar=False):
         if self.args.solver == 'ddim':
             return self.ddim_sampler(num_samples, sample_size, image_size, num_classes, progress_bar)
-        # elif self.args.solver == 'heun':
+        # elif self.args.solver == "heun":
         else:
             return self.edm_sampler(num_samples, sample_size, image_size, num_classes, progress_bar)
