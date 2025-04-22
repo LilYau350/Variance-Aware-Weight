@@ -64,7 +64,7 @@ def parse_args():
     parser.add_argument("--loss_type", type=str, default='MSE', choices=['MSE', 'RESCALED_MSE', 'KL', 'RESCALED_KL'], help="Loss type")
     parser.add_argument("--weight_type", type=str, default='constant', help="'constant', 'lambda', 'min_snr_k','vmin_snr_k', 'max_snr_k' 'debias', where k is a positive integer.")
     parser.add_argument("--mapping", type=str2bool, default=False, help="Enable mapped MSE loss (default: False)")
-    parser.add_argument("--gamma", type=float, default=0, help="Factor for loss regularization")
+    parser.add_argument("--gamma", type=float, default=0, help="Coefficient for loss regularization")
     parser.add_argument("--p2_gamma", type=int, default=1, help="hyperparameter for P2 weight")
     parser.add_argument("--p2_k", type=int, default=1, help="hyperparameter for P2 weight")
 
