@@ -111,7 +111,7 @@ def parse_args():
     parser.add_argument("--save_step", type=int, default=100000, help="Frequency of saving checkpoints, 0 to disable during training")
     parser.add_argument("--eval_step", type=int, default=50000, help="Frequency of evaluating model, 0 to disable during training")
     parser.add_argument("--num_samples", type=int, default=50000, help="The number of generated images for evaluation")
-    parser.add_argument("--fid_cache", type=str, default='./reference_batches/fid_stats_cifar_train.npz', help="FID cache")
+    parser.add_argument("--ref_batch", type=str, default='./reference_batches/fid_stats_cifar_train.npz', help="ref_batch")
 
     args = parser.parse_args()    
     return args
@@ -353,7 +353,7 @@ def init(args):
     eval_dir = os.path.join(args.logdir, args.dataset, 'evaluate')
     if dist_util.is_main_process():
         print("reading reference batch statistic...")
-        ref_stats, _ = evaluator.read_statistics(args.fid_cache, None)
+        ref_stats, _ = evaluator.read_statistics(args.ref_batch, None)
         os.makedirs(eval_dir, exist_ok=True)
     else:
         ref_stats = None
