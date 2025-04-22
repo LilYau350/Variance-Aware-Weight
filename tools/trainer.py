@@ -39,10 +39,10 @@ class Trainer:
             images, labels = next(self.datalooper)
         return images.to(self.device), labels.to(self.device) if self.args.class_cond else None
             
-    def _compute_loss(self, images, labels):
+    def _compute_loss(self, images, labels, step):
         model_kwargs = {"y": labels} if self.args.class_cond else {}
         t, weights = self.schedule_sampler.sample(images.shape[0], device=self.device)
-
+        # t = torch.full((images.shape[0],), step % 1000, device=images.device)
         loss_dict = self.diffusion.training_losses(self.model, images, t, model_kwargs=model_kwargs)
         
         # Update sampler with local losses if using LossAwareSampler
@@ -58,13 +58,13 @@ class Trainer:
     def _update_ema(self):
         if dist_util.is_main_process():
             ema(self.model, self.ema_model, self.args.ema_decay)
-                
+                   
     def _sample_from_latent(self, latent, latent_scale=1.):
         mean, std = torch.chunk(latent, 2, dim=1)
         latent_samples = mean + std * torch.randn_like(mean)
         latent_samples = latent_samples * latent_scale 
-        return latent_samples                 
-                            
+        return latent_samples 
+
     def train_step(self, step):
         self.model.train()
         if self.args.parallel:
@@ -81,10 +81,11 @@ class Trainer:
                 
             if self.args.amp:
                 with autocast():
-                    loss = self._compute_loss(images, labels) / grad_accumulation  # Scale loss for accumulation
+                # with autocast(dtype=torch.bfloat16):
+                    loss = self._compute_loss(images, labels, step) / grad_accumulation  # Scale loss for accumulation
                 self.scaler.scale(loss).backward()
             else:
-                loss = self._compute_loss(images, labels) / grad_accumulation  # Scale loss for accumulation
+                loss = self._compute_loss(images, labels, step) / grad_accumulation  # Scale loss for accumulation
                 loss.backward()
                 
             loss_accumulated += loss.item()
