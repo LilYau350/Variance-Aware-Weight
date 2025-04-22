@@ -14,8 +14,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Calculate FID statistics for a given dataset path.")
     parser.add_argument("--base_path", type=str, default="CelebA",
                         help="Base path to the dataset (e.g., CelebA)")
-    parser.add_argument("--dataset_type", type=str, choices=["train", "val", "test"], default="train",
-                        help="Dataset type to use (e.g., train, val, test)")
+    # parser.add_argument("--dataset_type", type=str, choices=["train", "val", "test"], default="train",
+    #                     help="Dataset type to use (e.g., train, val, test)")
     parser.add_argument("--dataset_name", type=str, default="church",
                         help="Name of the dataset (e.g., celeba)")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for processing images.")
@@ -49,7 +49,7 @@ if __name__ == "__main__":
     args = parse_args()
 
     base_path = args.base_path
-    dataset_type = args.dataset_type
+    # dataset_type = args.dataset_type
     dataset_name = args.dataset_name
     batch_size = args.batch_size
     image_size = args.image_size
@@ -63,7 +63,7 @@ if __name__ == "__main__":
         raise ValueError("Dataset name is not specified. Please provide a valid dataset name.")
 
     # Construct the full data path
-    data_path = os.path.join(base_path)
+    data_path = os.path.join(base_path)#, dataset_type)
 
     # Recursively find all images in the given dataset path, including subdirectories
     image_paths = glob.glob(os.path.join(data_path, '**', '*.png'), recursive=True)
