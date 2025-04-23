@@ -61,7 +61,7 @@ class Sampler:
         self.model = eval_model
         self.diffusion = diffusion      
         self.classifier = classifier
-
+        self.class_labels = []
     def _model_fn(self, x, t, y=None):
         return self.model(x, t, y if self.args.class_cond else None)
     
@@ -80,7 +80,7 @@ class Sampler:
         vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{self.args.vae}", local_files_only=True).to(self.device) if self.args.in_chans == 4 else None
         
         while len(all_samples) * sample_size < num_samples:
-            classes = self.get_y_cond(sample_size, num_classes)
+            classes = self._get_y_cond(sample_size, num_classes)
             sample = self.diffusion.ddim_sample_loop(
                 self.model if not self.classifier else self._model_fn,
                 (sample_size, 3, image_size, image_size),
@@ -115,7 +115,7 @@ class Sampler:
                   pred_type=self.args.mean_type).to(self.device)
 
         while len(all_samples) * sample_size < num_samples:
-            y_cond = self.get_y_cond(sample_size, num_classes)
+            y_cond = self._get_y_cond(sample_size, num_classes)
             z = torch.randn([sample_size, net.img_channels, net.img_resolution, net.img_resolution], device=self.device)
             class_labels, z = self._prepare_labels(y_cond, num_classes, sample_size, z)
 
@@ -132,12 +132,13 @@ class Sampler:
 
         return all_samples, all_labels
 
-    def get_y_cond(self, sample_size, num_classes):
-        y_cond = None
+    def _get_y_cond(self, sample_size, num_classes):
+        y_cond = None  
         if self.args.class_cond:
-            if self.args.class_labels is not None:
-                assert len(self.args.class_labels) == sample_size, f"Length of class_labels ({len(self.args.class_labels)}) must match sample_size ({sample_size})"
-                y_cond = torch.tensor(self.args.class_labels, device=self.device)
+            if len(self.class_labels) > 0:  
+                assert len(self.class_labels) == sample_size, (f"Length of class_labels ({len(self.class_labels)}) must match sample_size ({sample_size})")
+                assert all(isinstance(x, int) and 0 <= x < num_classes for x in self.class_labels), (f"Class labels must be integers in [0, {num_classes})")
+                y_cond = torch.tensor(self.class_labels, device=self.device)
             else:
                 y_cond = torch.randint(0, num_classes, (sample_size,), device=self.device)
         return y_cond
