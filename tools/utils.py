@@ -168,6 +168,7 @@ def save_metrics_to_csv(args, eval_dir, metrics, step):
         f"{args.dataset}_{args.model}_"
         + (f"patch_{args.patch_size}_" if args.patch_size else "")
         + f"lr_{args.lr}_"  
+        + f"betas_{args.betas}_"  
         + (f"lr_decay_{args.cosine_decay}_" if args.cosine_decay else "")        
         + f"dropout_{args.dropout}_"
         + f"drop_label_{args.drop_label_prob}_"
