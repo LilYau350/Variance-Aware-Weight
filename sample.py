@@ -37,11 +37,12 @@ model_variants = [
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train and evaluate guided diffusion models")
+    parser.add_argument("--model", type=str, default="DiT-XL", choices=model_variants, help="Model variant to use")    
     parser.add_argument("--patch_size", type=int, default=2, help="Patch Size for ViT, DiT, U-ViT, type is int")
     parser.add_argument("--in_chans", type=int, default=4, help="Number of input channels for the model")
     parser.add_argument("--image_size", type=int, default=32, help="Image size")
     parser.add_argument("--num_classes", type=int, default=1000, help="Number of classes, type is int")
-    parser.add_argument("--model", type=str, default="DiT-XL", choices=model_variants, help="Model variant to use")
+    parser.add_argument("--class_cond", default=True, type=str2bool, help="Set class_cond to enable class-conditional generation.")    
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
 
     # Gaussian Diffusion
@@ -54,9 +55,8 @@ def parse_args():
 
     # Training
     parser.add_argument("--latent_scale", type=float, default=0.18215, help="scaling factor for latent sample normalization. (0.18215 for unit variance)")
-    parser.add_argument("--class_cond", default=True, type=str2bool, help="Set class_cond to enable class-conditional generation.")
-    parser.add_argument("--parallel", default=True, type=str2bool, help="Use multi-GPU training")
-    parser.add_argument('--amp', default=True, type=str2bool, help='Use AMP for mixed precision training')
+    parser.add_argument("--parallel", default=True, type=str2bool, help="Use multi-GPU sampling")
+    parser.add_argument('--amp', default=True, type=str2bool, help='Use AMP for mixed precision sampling')
     parser.add_argument('--resume', type=str, default=None, help='Path to the checkpoint to resume from')
 
     # Logging & Sampling
