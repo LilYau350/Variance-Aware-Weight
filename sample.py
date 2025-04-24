@@ -68,7 +68,7 @@ def parse_args():
     parser.add_argument("--sample_timesteps", type=int, default=18, help="Number of sample diffusion steps")
     parser.add_argument("--class_labels", type=int, nargs="+", default=[207, 360, 387, 974, 88, 979, 417, 279], help="Specify the class labels used for sampling, e.g., --class_labels 207 360 387")
     parser.add_argument("--num_samples", type=int, default=50000, help="The number of generated images for evaluation")
-    parser.add_argument("--logdir", type=str, default='./logs', help="Log directory")
+    parser.add_argument("--save_path", type=str, default='./sample_images', help="Log directory")
     parser.add_argument("--sample_size", type=int, default=64, help="Sampling size of images")
     parser.add_argument("--sample_step", type=int, default=10000, help="Frequency of sampling")
     parser.add_argument("--use_classifier", type=str, default=None, help="Path to the pre-trained classifier model")
