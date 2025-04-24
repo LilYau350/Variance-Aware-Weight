@@ -99,6 +99,7 @@ def parse_args():
     parser.add_argument('--schedule', type=str, default='linear', choices=['vp', 've', 'linear'], help='Noise schedule for edm sampling.')
     parser.add_argument('--scaling', type=str, default='none', choices=['vp', 'none'], help='Scaling strategy for model output in edm.')
     parser.add_argument("--sample_timesteps", type=int, default=18, help="Number of sample diffusion steps")
+    parser.add_argument("--class_labels", type=int, nargs="+", default=None, help="Specify the class labels used for sampling, e.g., --class_labels 207 360 387")
     parser.add_argument("--logdir", type=str, default='./logs', help="Log directory")
     parser.add_argument("--sample_size", type=int, default=64, help="Sampling size of images")
     parser.add_argument("--sample_step", type=int, default=10000, help="Frequency of sampling")
