@@ -91,17 +91,17 @@ def main():
     set_random_seed(args, args.seed)
     
     sample_diffusion = build_diffusion(args, use_ddim=True)
-    
     ema_model = build_model(args).to(device)
     
     if args.parallel:
         ema_model = DDP(ema_model, device_ids=[local_rank], output_device=local_rank)
 
-    checkpoint = load_checkpoint(args.resume, ema_model=ema_model)
+    assert os.path.exists(args.resume), 'Error: checkpoint {} not found'.format(ckpt_path)
+    checkpoint = torch.load(args.resume)
+    ema_model.load_state_dict(checkpoint['ema_model'])
 
     classifier = Classifier(args, device, ema_model) if args.use_classifier else None
     sampler = Sampler(args, device, ema_model, sample_diffusion, classifier=classifier)
-    
     
     with torch.no_grad():
         all_samples, _ = sampler.sample(
