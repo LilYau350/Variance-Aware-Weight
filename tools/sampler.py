@@ -61,7 +61,7 @@ class Sampler:
         self.model = eval_model
         self.diffusion = diffusion      
         self.classifier = classifier
-        self.class_labels = []
+
     def _model_fn(self, x, t, y=None):
         return self.model(x, t, y if self.args.class_cond else None)
     
@@ -135,10 +135,10 @@ class Sampler:
     def _get_y_cond(self, sample_size, num_classes):
         y_cond = None  
         if self.args.class_cond:
-            if len(self.class_labels) > 0:  
-                assert len(self.class_labels) == sample_size, (f"Length of class_labels ({len(self.class_labels)}) must match sample_size ({sample_size})")
-                assert all(isinstance(x, int) and 0 <= x < num_classes for x in self.class_labels), (f"Class labels must be integers in [0, {num_classes})")
-                y_cond = torch.tensor(self.class_labels, device=self.device)
+            if self.args.class_labels is not None:  
+                assert len(self.args.class_labels) == sample_size, (f"Length of class_labels ({len(self.args.class_labels)}) must match sample_size ({sample_size})")
+                assert all(isinstance(x, int) and 0 <= x < num_classes for x in self.args.class_labels), (f"Class labels must be integers in [0, {num_classes})")
+                y_cond = torch.tensor(self.args.class_labels, device=self.device)
             else:
                 y_cond = torch.randint(0, num_classes, (sample_size,), device=self.device)
         return y_cond
