@@ -7,8 +7,3 @@ CUDA_VISIBLE_DEVICES=0,1 torchrun --nproc_per_node=2 main.py --train True --eval
           --sample_timesteps 50 --guidance_scale 1.0 --sample_step 50000 --num_samples 50000 --save_step 100000 --eval_step 50000 \
           --ref_batch './preprocessing/reference_batches/VIRTUAL_imagenet256_labeled.npz' 
 
-# note 
-# In trainer.py#L76, We can modify trainer.py (autocast()) as with autocast(dtype=torch.bfloat16). BP16 would be more stable than FP16.
-# https://github.com/LilYau350/Representation-Degradation-in-Diffusion-Training/blob/e38244941c7ae726fd0dad8ae2f9b37e95bea78e/tools/trainer.py#L76 
-
-# Here, betas can be set to 0.99 0.99, or 0.9 0.999, we search lr {1e-3,5e-4,1e-4} first. 
