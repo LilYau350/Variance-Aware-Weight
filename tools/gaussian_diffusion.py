@@ -204,7 +204,6 @@ class GaussianDiffusion:
         loss_type,
         rescale_timesteps=False,
         mse_loss_weight_type='constant',
-        mapping=False,
         gamma,
         p2_gamma=1,
         p2_k=1,
