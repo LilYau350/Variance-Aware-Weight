@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # ImageNet 32×32×4 DiT 
 CUDA_VISIBLE_DEVICES=0,1 torchrun --nproc_per_node=2 main.py --train True --eval True --data_dir './ImageNet/ImageNet_256/ImageNet.h5' --dataset 'Latent' \
           --patch_size 2 --in_chans 4 --image_size 32 --num_classes 1000 --model 'DiT-S' --mean_type 'EPSILON' \
