@@ -214,7 +214,7 @@ class GaussianDiffusion:
         self.loss_type = loss_type
         self.rescale_timesteps = rescale_timesteps
         self.mse_loss_weight_type = mse_loss_weight_type
-        self.mapping = mapping
+
         self.gamma = gamma      
         # P2 weighting
         self.p2_gamma = p2_gamma
@@ -894,19 +894,19 @@ class GaussianDiffusion:
                 # max{snr, k}
                 mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).max(dim=1)[0] / snr
                 
-            elif self.mse_loss_weight_type.startswith("lambda"):
+            elif self.mse_loss_weight_type == 'lambda':
                 mse_loss_weight = sigma
                 
-            elif self.mse_loss_weight_type.startswith("debias"):
+            elif self.mse_loss_weight_type == 'debias':
                 mse_loss_weight = sigma / alpha
                 
-            elif self.mse_loss_weight_type.startswith("p2"):
+            elif self.mse_loss_weight_type == 'p2':
                 mse_loss_weight = 1 / (self.p2_k + snr)**self.p2_gamma
 
-            elif self.mse_loss_weight_type.startswith("min_debias"):
+            elif self.mse_loss_weight_type ==  'min_debias':
                 mse_loss_weight = th.minimum(sigma / alpha, th.ones_like(sigma))
 
-            elif self.mse_loss_weight_type.startswith("max_debias"):
+            elif self.mse_loss_weight_type == 'max_debias':
                 mse_loss_weight = th.maximum(sigma / alpha, th.ones_like(sigma))
                   
         else:
@@ -929,7 +929,7 @@ class GaussianDiffusion:
                 # min{snr, k}
                 mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).max(dim=1)[0]
                 
-            elif self.mse_loss_weight_type.startswith("lambda"):
+            elif self.mse_loss_weight_type == 'lambda':
                 mse_loss_weight = alpha
 
             
@@ -989,7 +989,7 @@ class GaussianDiffusion:
 
             raw_mse = mean_flat((target - model_output) ** 2)
         
-            if self.mapping:
+            if self.mse_loss_weight_type == 'sigma':
                 mse_loss_weight = self.weight(raw_mse.detach())
                 
             terms["mse"] = mse_loss_weight * raw_mse
