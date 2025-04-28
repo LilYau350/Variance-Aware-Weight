@@ -63,7 +63,6 @@ def parse_args():
     parser.add_argument("--var_type", type=str, default='FIXED_LARGE', choices=['FIXED_LARGE', 'FIXED_SMALL', 'LEARNED', 'LEARNED_RANGE'], help="Variance type")
     parser.add_argument("--loss_type", type=str, default='MSE', choices=['MSE', 'RESCALED_MSE', 'KL', 'RESCALED_KL'], help="Loss type")
     parser.add_argument("--weight_type", type=str, default='constant', help="'constant', 'lambda', 'min_snr_k','vmin_snr_k', 'max_snr_k' 'debias', where k is a positive integer.")
-    parser.add_argument("--mapping", type=str2bool, default=False, help="Enable mapped MSE loss (default: False)")
     parser.add_argument("--gamma", type=float, default=0, help="Coefficient for loss regularization")
     parser.add_argument("--p2_gamma", type=int, default=1, help="hyperparameter for P2 weight")
     parser.add_argument("--p2_k", type=int, default=1, help="hyperparameter for P2 weight")
@@ -222,7 +221,6 @@ def build_diffusion(args, use_ddim=False):
         loss_type=LossType[args.loss_type.upper()],
         rescale_timesteps=True,
         mse_loss_weight_type=args.weight_type,
-        mapping=args.mapping,
         gamma=args.gamma,
         p2_gamma=args.p2_gamma,
         p2_k=args.p2_k
