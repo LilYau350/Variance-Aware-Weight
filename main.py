@@ -224,8 +224,8 @@ def build_diffusion(args, use_ddim=False):
         mse_loss_weight_type=args.weight_type,
         mapping=args.mapping,
         gamma=args.gamma,
-        p2_gamma = args.p2_gamma,
-        p2_k = args.p2_k
+        p2_gamma=args.p2_gamma,
+        p2_k=args.p2_k
     )
 
     if use_ddim:
