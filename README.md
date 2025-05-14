@@ -1,5 +1,3 @@
-# Representation Degradation Problem in Diffusion Model Training
-
 ## 🛠️ Requirements and Installation
 You can refer to the following instructions to configure the environment required for the experiments. 
 
