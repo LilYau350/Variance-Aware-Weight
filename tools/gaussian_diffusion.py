@@ -875,18 +875,21 @@ class GaussianDiffusion:
         
         velocity = (alpha[:, None, None, None] * x_t - x_start) / sigma[:, None, None, None]
         
-        # get loss weight
-        if self.model_mean_type is not ModelMeanType.START_X or self.mse_loss_weight_type == 'constant':
+        if self.mse_loss_weight_type == 'constant':
             mse_loss_weight = th.ones_like(t)
+
+        # get loss weight
+        if self.model_mean_type is ModelMeanType.EPSILON:
+            # mse_loss_weight = th.ones_like(t)
             if self.mse_loss_weight_type.startswith("min_snr_"):
                 k = float(self.mse_loss_weight_type.split('min_snr_')[-1])
                 # min{snr, k}
                 mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).min(dim=1)[0] / snr
 
-            elif self.mse_loss_weight_type.startswith("vmin_snr_"):
-                k = float(self.mse_loss_weight_type.split('vmin_snr_')[-1])
-                # min{snr, k}
-                mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).min(dim=1)[0] / (snr + 1)
+            # elif self.mse_loss_weight_type.startswith("vmin_snr_"):
+            #     k = float(self.mse_loss_weight_type.split('vmin_snr_')[-1])
+            #     # min{snr, k}
+            #     mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).min(dim=1)[0] / (snr + 1)
             
             elif self.mse_loss_weight_type.startswith("max_snr_"):
                 k = float(self.mse_loss_weight_type.split('max_snr_')[-1])
@@ -894,7 +897,7 @@ class GaussianDiffusion:
                 mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).max(dim=1)[0] / snr
                 
             elif self.mse_loss_weight_type == 'lambda':
-                mse_loss_weight = sigma ** 2
+                mse_loss_weight = sigma
                 
             elif self.mse_loss_weight_type == 'debias':
                 mse_loss_weight = sigma / alpha
@@ -908,7 +911,7 @@ class GaussianDiffusion:
             elif self.mse_loss_weight_type == 'max_debias':
                 mse_loss_weight = th.maximum(sigma / alpha, th.ones_like(sigma))
                   
-        else:
+        elif self.model_mean_type is ModelMeanType.START_X:
             if self.mse_loss_weight_type == 'trunc_snr':
                 # max{snr, 1}
                 mse_loss_weight = th.stack([snr, th.ones_like(t)], dim=1).max(dim=1)[0]
@@ -929,7 +932,16 @@ class GaussianDiffusion:
                 mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).max(dim=1)[0]
                 
             elif self.mse_loss_weight_type == 'lambda':
-                mse_loss_weight = alpha ** 2
+                mse_loss_weight = alpha
+                
+        elif self.model_mean_type is ModelMeanType.VELOCITY:
+            if self.mse_loss_weight_type.startswith("min_snr_"):
+                k = float(self.mse_loss_weight_type.split('min_snr_')[-1])
+                # min{snr, k}
+                mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).min(dim=1)[0] / (snr + 1)
+                
+            elif self.mse_loss_weight_type == 'lambda':
+                mse_loss_weight = 2 * alpha * sigma
 
             
         if mse_loss_weight is None:
