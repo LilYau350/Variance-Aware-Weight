@@ -128,7 +128,8 @@ class Net(torch.nn.Module):
         
         elif self.noise_schedule == 'laplace':
             mu, b = 0.0, 0.5         
-            t_normalized = (self.M - j) / (self.M - 1)  
+            # t_normalized = (self.M - j + 1) / (self.M - 1)  
+            t_normalized = (self.M - j) / self.M
             log_term = 1 - 2 * torch.abs(0.5 - t_normalized)
             lmb = mu - b * torch.sign(0.5 - t_normalized) * torch.log(log_term)
             snr = torch.exp(lmb)
