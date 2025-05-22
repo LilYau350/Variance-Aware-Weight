@@ -26,6 +26,7 @@ from models.unet import *; from models.dit import *; from models.vit import *; f
 from tools.gaussian_diffusion import (
     get_named_beta_schedule,
     GaussianDiffusion,
+    FlowMatching,
     ModelMeanType,
     ModelVarType,
     LossType
@@ -55,11 +56,22 @@ def parse_args():
     parser.add_argument("--model", type=str, default="ADM-32", choices=model_variants, help="Model variant to use")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
 
+
     # Gaussian Diffusion
+    parser.add_argument("--model_mode",type=str,default="diffusion",choices=["diffusion", "flow"],
+                                                    help="Choose diffusion mode: 'flow' for SDE/ODE-based modeling, 'diffusion' for DDPM-like modeling.")
+    # Flow matching
+    parser.add_argument("--path_type", type=str, default='linear', choices=['linear', 'cosine'], help="Path type for flow matching")    
+    parser.add_argument('--sampler_type', type=str, default='sde', choices=['sde', 'ode'], help='Type of flow matching sampler to use')   
+    parser.add_argument("--diffusion_term", type=str, default="sigma", choices=["constant", "SBDM", "sigma", "linear", "decreasing", "increasing-decreasing"],
+                                                    help="form of diffusion coefficient in the SDE")
+    parser.add_argument("--diffusion_norm", type=float, default=1.0)
+    # Discrete Diffusion
     parser.add_argument("--beta_schedule", type=str, default='cosine', help="Beta schedule type 'linear', 'cosine', 'laplace', and 'power'.")
     parser.add_argument("--p", type=float, default=2, help="power for power schedule.")
     parser.add_argument("--T", type=int, default=1000, help="Number of diffusion steps")
-    parser.add_argument("--mean_type", type=str, default='EPSILON', choices=['PREVIOUS_X', 'START_X', 'EPSILON', 'VELOCITY', 'UNRAVEL'], help="Predict variable")
+    # loss type for diffusion or flow matching
+    parser.add_argument("--mean_type", type=str, default='EPSILON', choices=['PREVIOUS_X', 'START_X', 'EPSILON', 'VELOCITY', 'VECTOR', 'SCORE'], help="Predict variable")
     parser.add_argument("--var_type", type=str, default='FIXED_LARGE', choices=['FIXED_LARGE', 'FIXED_SMALL', 'LEARNED', 'LEARNED_RANGE'], help="Variance type")
     parser.add_argument("--loss_type", type=str, default='MSE', choices=['MSE', 'RESCALED_MSE', 'KL', 'RESCALED_KL'], help="Loss type")
     parser.add_argument("--weight_type", type=str, default='constant', help="'constant', 'lambda', 'min_snr_k','vmin_snr_k', 'max_snr_k' 'debias', where k is a positive integer.")
@@ -67,46 +79,59 @@ def parse_args():
     parser.add_argument("--p2_gamma", type=int, default=1, help="hyperparameter for P2 weight")
     parser.add_argument("--p2_k", type=int, default=1, help="hyperparameter for P2 weight")
 
+
     # Training
+    parser.add_argument("--num_workers", type=int, default=4, help="Number of workers for DataLoader")    
+    parser.add_argument("--batch_size", type=int, default=128, help="Batch size for training")    
+    parser.add_argument("--total_steps", type=int, default=400000, help="Total training steps") 
+    parser.add_argument("--ema_decay", type=float, default=0.9999, help="EMA decay rate")        
+    parser.add_argument("--class_cond", default=False, type=str2bool, help="Set class_cond to enable class-conditional generation.")
+    parser.add_argument("--learn_sigma", default=False, type=str2bool, help="Set learn_sigma to enable learn distribution sigma.")    
+    # Adam settings
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     parser.add_argument('--betas', type=float, nargs=2, default=(0.9, 0.999), help='Beta values for optimization')
     parser.add_argument("--weight_decay", type=float, default=0.0, help="Weight decay for the optimizer")
     parser.add_argument("--eps", type=float, default=1e-8, help="eps for the optimizer")
+    # CFG training
+    parser.add_argument('--drop_label_prob', type=float, default=0.0, help='Probability of dropping labels for classifier-free guidance')    
+    # Sampling latnet
     parser.add_argument("--latent_scale", type=float, default=0.18215, help="scaling factor for latent sample normalization. (0.18215 for unit variance)")
+    # Training tircks
+    parser.add_argument("--warmup_steps", type=int, default=5000, help="Learning rate warmup")    
     parser.add_argument("--final_lr", type=float, default=0.0, help="Final learning rate")
     parser.add_argument("--grad_clip", type=float, default=None, help="Gradient norm clipping")
     parser.add_argument("--dropout", type=float, default=0.1, help='Dropout rate of resblock')
-    parser.add_argument('--drop_label_prob', type=float, default=0.0, help='Probability of dropping labels for classifier-free guidance')
-    parser.add_argument("--total_steps", type=int, default=400000, help="Total training steps")
-    parser.add_argument("--warmup_steps", type=int, default=5000, help="Learning rate warmup")
-    parser.add_argument("--batch_size", type=int, default=128, help="Batch size for training")
-    parser.add_argument('--grad_accumulation', type=int, default=1, help='Number of gradient accumulation steps (default: 1, no accumulation)')
-    parser.add_argument("--num_workers", type=int, default=4, help="Number of workers for DataLoader")
-    parser.add_argument("--ema_decay", type=float, default=0.9999, help="EMA decay rate")
-    parser.add_argument('--sampler_type', type=str, default='uniform', choices=['uniform', 'loss-second-moment'], help='Type of schedule sampler to use')
     parser.add_argument("--cosine_decay", default=True, type=str2bool, help="Whether to use cosine learning rate decay")
-    parser.add_argument("--class_cond", default=False, type=str2bool, help="Set class_cond to enable class-conditional generation.")
-    parser.add_argument("--learn_sigma", default=False, type=str2bool, help="Set learn_sigma to enable learn distribution sigma.")
+    # DDP nad mixed precision training
     parser.add_argument("--parallel", default=False, type=str2bool, help="Use multi-GPU training")
     parser.add_argument('--amp', default=True, type=str2bool, help='Use AMP for mixed precision training')
-    parser.add_argument('--resume', type=str, default=None, help='Path to the checkpoint to resume from')
+    parser.add_argument('--grad_accumulation', type=int, default=1, help='Number of gradient accumulation steps (default: 1, no accumulation)')
+    parser.add_argument('--resume', type=str, default=None, help='Path to the checkpoint to resume from')   
+
 
     # Logging & Sampling
+    parser.add_argument("--logdir", type=str, default='./logs', help="Log directory")
+    parser.add_argument("--sample_step", type=int, default=10000, help="Frequency of sampling during training")      
+    parser.add_argument("--sample_size", type=int, default=64, help="Sampling size of images")
+    parser.add_argument("--sample_timesteps", type=int, default=18, help="Number of sample diffusion steps")   
+    parser.add_argument("--class_labels", type=int, nargs="+", default=None, help="Specify the class labels used for sampling, e.g., --class_labels 207 360 387") 
+    parser.add_argument("--use_classifier", type=str, default=None, help="Path to the pre-trained classifier model")
+    # cfg and limited interval guidance
+    parser.add_argument('--guidance_scale', type=float, default=1.0, help='Scale factor for classifier-free guidance')       
+    parser.add_argument('--t_from', type=float, default=-1, help='Starting timestep for finite interval guidance (non-negative, >= 0). Set to -1 to disable interval guidance.')
+    parser.add_argument('--t_to', type=float, default=-1, help='Ending timestep for finite interval guidance (must be > t_from). Set to -1 to disable interval guidance.')    
+    # which version of latnet model to choose
     parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")
-    parser.add_argument("--solver", type=str, default='heun', choices=['ddim', 'heun', 'euler'], help="Choose sampler 'ddim', 'euler' or 'heun'")
+    # ode/sde solver
+    parser.add_argument("--solver", type=str, default='heun', choices=['ddim', 'heun', 'euler', 'dopri5'], help="Choose sampler 'ddim', 'euler' or 'heun'")
+    parser.add_argument("--atol", type=float, default=1e-6, help="Absolute tolerance")
+    parser.add_argument("--rtol", type=float, default=1e-3, help="Relative tolerance")
+    # edm sampler
     parser.add_argument('--discretization', type=str, default='edm', choices=['vp', 've', 'iddpm', 'edm'], help='Discretization method for edm solver.')
     parser.add_argument('--schedule', type=str, default='linear', choices=['vp', 've', 'linear'], help='Noise schedule for edm sampling.')
     parser.add_argument('--scaling', type=str, default='none', choices=['vp', 'none'], help='Scaling strategy for model output in edm.')
-    parser.add_argument("--sample_timesteps", type=int, default=18, help="Number of sample diffusion steps")
-    parser.add_argument("--class_labels", type=int, nargs="+", default=None, help="Specify the class labels used for sampling, e.g., --class_labels 207 360 387")
-    parser.add_argument("--logdir", type=str, default='./logs', help="Log directory")
-    parser.add_argument("--sample_size", type=int, default=64, help="Sampling size of images")
-    parser.add_argument("--sample_step", type=int, default=10000, help="Frequency of sampling")
-    parser.add_argument("--use_classifier", type=str, default=None, help="Path to the pre-trained classifier model")
-    parser.add_argument('--guidance_scale', type=float, default=1.0, help='Scale factor for classifier-free guidance')
-    parser.add_argument('--t_from', type=int, default=-1, help='Starting timestep for finite interval guidance (non-negative, >= 0). Set to -1 to disable interval guidance.')
-    parser.add_argument('--t_to', type=int, default=-1, help='Ending timestep for finite interval guidance (must be > t_from). Set to -1 to disable interval guidance.')
-    
+
+
     # Evaluation
     parser.add_argument("--save_step", type=int, default=100000, help="Frequency of saving checkpoints, 0 to disable during training")
     parser.add_argument("--eval_step", type=int, default=50000, help="Frequency of evaluating model, 0 to disable during training")
@@ -205,34 +230,48 @@ def build_model(args):
 
 
 def build_diffusion(args, use_ddim=False):
+    if args.model_mode == "diffusion":
+        betas = get_named_beta_schedule(args.beta_schedule, args.T, args.p)
+        timestep_respacing = (
+            f"ddim{args.sample_timesteps}" if use_ddim and args.sample_timesteps < args.T else [args.T]
+        )
+        diffusion_kwargs = dict(
+            betas=betas,
+            model_mean_type=ModelMeanType[args.mean_type.upper()],
+            model_var_type=ModelVarType[args.var_type.upper()],
+            loss_type=LossType[args.loss_type.upper()],
+            rescale_timesteps=True,
+            mse_loss_weight_type=args.weight_type,
+            gamma=args.gamma,
+            p2_gamma=args.p2_gamma,
+            p2_k=args.p2_k,
+        )
+        if use_ddim:
+            return SpacedDiffusion(
+                use_timesteps=space_timesteps(args.T, timestep_respacing),
+                **diffusion_kwargs,
+            )
+        else:
+            return GaussianDiffusion(**diffusion_kwargs)
 
-    betas = get_named_beta_schedule(args.beta_schedule, args.T, args.p)
+    elif args.model_mode == "flow":
+        flow_kwargs = dict(
+            model_mean_type=ModelMeanType[args.mean_type.upper()],
+            mse_loss_weight_type=args.weight_type,
+            diffusion_term=args.diffusion_term,   
+            diffusion_norm=args.diffusion_norm,         
+            path_type=args.path_type,   
+            sampler_type=args.sampler_type,         
+            p2_gamma=args.p2_gamma,
+            p2_k=args.p2_k,
+            atol = args.atol,
+            rtol = args.rtol,
+        )
+        return FlowMatching(**flow_kwargs)
     
-    if use_ddim and args.sample_timesteps < args.T:  
-        # Use DDIM and specify the number of sampling steps.
-        timestep_respacing = f"ddim{args.sample_timesteps}"  
     else:
-        timestep_respacing = [args.T]
-    
-    diffusion_kwargs = dict(
-        betas=betas,
-        model_mean_type=ModelMeanType[args.mean_type.upper()],
-        model_var_type=ModelVarType[args.var_type.upper()],
-        loss_type=LossType[args.loss_type.upper()],
-        rescale_timesteps=True,
-        mse_loss_weight_type=args.weight_type,
-        gamma=args.gamma,
-        p2_gamma=args.p2_gamma,
-        p2_k=args.p2_k
-    )
-
-    if use_ddim:
-        return SpacedDiffusion(
-            use_timesteps=space_timesteps(args.T, timestep_respacing),
-            **diffusion_kwargs)
-    else:
-        return GaussianDiffusion(**diffusion_kwargs)
-           
+        raise ValueError(f"Unsupported model_mode: {args.model_mode}")
+               
            
 def eval(args, **kwargs):
     model, ema_model, eval_dir, step = (kwargs['model'], kwargs['ema_model'], kwargs['eval_dir'], kwargs['step'])
@@ -315,6 +354,7 @@ def init(args):
     
     diffusion = build_diffusion(args, use_ddim=False)
     sample_diffusion = build_diffusion(args, use_ddim=True)
+
     
     if args.eval and not args.train:
         ema_model = build_model(args).to(device)
