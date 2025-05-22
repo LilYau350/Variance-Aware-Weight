@@ -112,8 +112,8 @@ def parse_args():
     # Logging & Sampling
     parser.add_argument("--logdir", type=str, default='./logs', help="Log directory")
     parser.add_argument("--sample_size", type=int, default=64, help="Sampling size of images")
-    parser.add_argument("--sample_step", type=int, default=10000, help="Frequency of sampling during training")        
-    parser.add_argument("--sample_timesteps", type=int, default=18, help="Number of sample diffusion steps")   
+    parser.add_argument("--sample_freq", type=int, default=10000, help="Frequency of sampling during training")        
+    parser.add_argument("--sample_steps", type=int, default=18, help="Number of sample diffusion steps")   
     parser.add_argument("--class_labels", type=int, nargs="+", default=None, help="Specify the class labels used for sampling, e.g., --class_labels 207 360 387") 
     parser.add_argument("--use_classifier", type=str, default=None, help="Path to the pre-trained classifier model")
     # cfg and limited interval guidance
@@ -233,7 +233,7 @@ def build_diffusion(args, use_ddim=False):
     if args.model_mode == "diffusion":
         betas = get_named_beta_schedule(args.beta_schedule, args.T, args.p)
         timestep_respacing = (
-            f"ddim{args.sample_timesteps}" if use_ddim and args.sample_timesteps < args.T else [args.T]
+            f"ddim{args.sample_steps}" if use_ddim and args.sample_steps < args.T else [args.T]
         )
         diffusion_kwargs = dict(
             betas=betas,
@@ -324,7 +324,7 @@ def train(args, **kwargs):
             
             loss = trainer.train_step(step)      
             # Sample and save images
-            if args.sample_step > 0 and step % args.sample_step == 0:
+            if args.sample_freq > 0 and step % args.sample_freq == 0:
                 # sample_and_save(args, step, device, ema_model, sample_diffusion, save_grid=True)
                 generate_samples(args, step, device, ema_model, sample_diffusion, save_grid=True)
     
