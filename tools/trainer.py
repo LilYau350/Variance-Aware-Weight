@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.cuda.amp import autocast, GradScaler
 from tools import dist_util, logger
-from .resample import LossAwareSampler, UniformSampler, create_named_schedule_sampler
+# from .resample import LossAwareSampler, UniformSampler, create_named_schedule_sampler
 import csv
 import os
 import torch.distributed as dist
@@ -26,7 +26,7 @@ class Trainer:
         self.diffusion = diffusion
         self.train_loader = train_loader
         self.datalooper = iter(train_loader)
-        self.schedule_sampler = create_named_schedule_sampler(args.sampler_type, diffusion)
+        # self.schedule_sampler = create_named_schedule_sampler(args.sampler_type, diffusion)
         self.scaler = GradScaler() if args.amp else None
         self.start_step = start_step        
         self.pbar = pbar
@@ -41,15 +41,17 @@ class Trainer:
             
     def _compute_loss(self, images, labels, step):
         model_kwargs = {"y": labels} if self.args.class_cond else {}
-        t, weights = self.schedule_sampler.sample(images.shape[0], device=self.device)
+        t= None
+        # t, weights = self.schedule_sampler.sample(images.shape[0], device=self.device)
         # t = torch.full((images.shape[0],), step % 1000, device=images.device)
-        loss_dict = self.diffusion.training_losses(self.model, images, t, model_kwargs=model_kwargs)
-        
-        # Update sampler with local losses if using LossAwareSampler
-        if isinstance(self.schedule_sampler, LossAwareSampler):
-            self.schedule_sampler.update_with_local_losses(t, loss_dict["loss"].detach())
+
+        loss_dict = self.diffusion.training_losses(self.model, images, t=t, model_kwargs=model_kwargs)
+
+        # # Update sampler with local losses if using LossAwareSampler
+        # if isinstance(self.schedule_sampler, LossAwareSampler):
+        #     self.schedule_sampler.update_with_local_losses(t, loss_dict["loss"].detach())
             
-        return (loss_dict["loss"] * weights).mean()
+        return (loss_dict["loss"]).mean()
 
     def _apply_gradient_clipping(self):
         if self.args.grad_clip:
