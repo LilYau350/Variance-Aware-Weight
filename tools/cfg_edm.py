@@ -76,15 +76,30 @@ class Net(torch.nn.Module):
                 c_skip = 1
                 c_out = -sigma
                 D_x = c_skip * x + c_out * F_x[:, :self.img_channels].to(torch.float32)
+                
             elif self.pred_type == 'START_X':
-                D_x = F_x
-                D_x = self.apply(D_x, guidance_scale)             
+                # D_x = F_x
+                # D_x = self.apply(D_x, guidance_scale)     
+                D_x = self.apply(F_x, guidance_scale)
+                        
             elif self.pred_type == 'VELOCITY':
                 F_x = self.apply(F_x, guidance_scale)         
                 # v = sqrt_alpha_bar * eps - sqrt_one_minus_alpha_bar * x_0
                 c_skip = c_in ** 2  # \bar{\alpha}_t ** 2
                 c_out = -sigma * c_in  # -\sqrt{1 - \bar{\alpha}_t}
                 D_x = c_skip * x + c_out * F_x[:, :self.img_channels].to(torch.float32)
+                
+            # elif self.pred_type == 'UNRAVEL': 
+            #     F_x = self.apply(F_x, guidance_scale) 
+            #     c_skip = 1
+            #     c_out = 1 / c_in
+            #     D_x = (c_skip * x + c_out * F_x[:, :self.img_channels].to(torch.float32) )/ 2
+                
+            # elif self.pred_type == 'UNRAVEL':
+            #     F_x = self.apply(F_x, guidance_scale)
+            #     c_skip = 1
+            #     c_out = -1 / c_in
+            #     D_x = (c_skip * x + c_out * F_x[:, :self.img_channels].to(torch.float32) )/ 2
             else:
                 raise ValueError(f"Unsupported pred_type: {self.pred_type}")
 
@@ -114,17 +129,6 @@ class Net(torch.nn.Module):
             alphas = 1.0 - betas
             alphas_cumprod = np.cumprod(alphas, axis=0)
             return alphas_cumprod[self.M - j]
-        
-        # elif self.noise_schedule == 'laplace':
-        #     mu, b = 0.0, 0.5
-        #     # t = np.linspace(1, self.M+1, self.M+1, dtype=np.float64)
-        #     t = np.arange(1, self.M + 2, dtype=np.float64)
-        #     t_normalized = torch.tensor((t-1) / (self.M-1))
-        #     log_term = 1 - 2 * torch.abs(0.5 - t_normalized)
-        #     lmb = mu - b * torch.sign(0.5 - t_normalized) * torch.log(log_term)
-        #     snr = torch.exp(lmb)
-        #     alpha_bar = 1 / (1 + 1 / snr)
-        #     return alpha_bar[self.M - j]
         
         elif self.noise_schedule == 'laplace':
             mu, b = 0.0, 0.5         
