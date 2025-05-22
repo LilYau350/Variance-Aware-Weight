@@ -7,13 +7,40 @@ Docstrings have been added, as well as DDIM sampling and a new collection of bet
 
 import enum
 import math
-
+from torchdiffeq import odeint
 import numpy as np
 import torch as th
 import torch.distributed as dist
 from tools.nn import mean_flat
 from tools.losses import normal_kl, discretized_gaussian_log_likelihood
 from tools import logger
+import torch.nn.functional as F
+from transport.path import ICPlan, VPCPlan, GVPCPlan
+
+class RFFCosineReg:
+    def __init__(self, input_dim, rff_dim=512, sigma=1.0, device='cuda'):
+        self.W = th.randn(rff_dim, input_dim, device=device) / sigma
+        self.b = 2 * math.pi * th.rand(rff_dim, device=device)
+
+    def regularization(self, pred, target):
+        """
+        pred: [B, D] predicted output
+        target: [B, D] ground truth
+
+        returns: [B] cosine similarity between RFF(pred) and RFF(target)
+        """
+        # Random Fourier Features mapping
+        def rff(x):
+            # x: [B, D]
+            return th.cos(x @ self.W.T + self.b)  # -> [B, rff_dim]
+
+        pred_feat = rff(pred)
+        target_feat = rff(target)
+
+        # Cosine similarity for each sample
+        cos_sim = F.cosine_similarity(pred_feat, target_feat, dim=1)  # [B]
+
+        return cos_sim
 
 
 def get_named_beta_schedule(schedule_name, num_diffusion_timesteps, power):
@@ -85,63 +112,6 @@ def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
     return np.array(betas)
 
 
-# def compute_alpha_sigma(betas, t):
-#     """
-#     Compute alpha and sigma for a batch of timesteps.
-
-#     :param betas: A numpy array of betas for the diffusion process.
-#     :param t_indices: A numpy array of shape (batch_size,) representing timesteps for each sample in the batch.
-#     :return: Tuple of (alpha, sigma) for the given timesteps, each of shape (batch_size,).
-#     """
-#     alphas = 1.0 - betas  # Compute alphas
-#     alphas_cumprod = np.cumprod(alphas)  # Compute cumulative product of alphas
-
-#     # Fetch values corresponding to timesteps in t_indices
-#     alpha = np.sqrt(alphas_cumprod[t])  # Compute sqrt(alphas_cumprod) for t_indices
-#     sigma = np.sqrt(1.0 - alphas_cumprod[t])  # Compute sqrt(1 - alphas_cumprod) for t_indices
-    
-#     return alpha, sigma
-
-# --------------------------------------------------
-# def get_snr(steps=1000):
-#     def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
-#         """
-#         Create a beta schedule that discretizes the given alpha_t_bar function,
-#         which defines the cumulative product of (1-beta) over time from t = [0,1].
-#         :param num_diffusion_timesteps: the number of betas to produce.
-#         :param alpha_bar: a lambda that takes an argument t from 0 to 1 and
-#                           produces the cumulative product of (1-beta) up to that
-#                           part of the diffusion process.
-#         :param max_beta: the maximum beta to use; use values lower than 1 to
-#                          prevent singularities.
-#         """
-#         betas = []
-#         for i in range(num_diffusion_timesteps):
-#             t1 = i / num_diffusion_timesteps
-#             t2 = (i + 1) / num_diffusion_timesteps
-#             betas.append(min(1 - alpha_bar(t2) / alpha_bar(t1), max_beta))
-#         return np.array(betas)
-
-#     betas = betas_for_alpha_bar(
-#         steps,
-#         lambda t: math.cos((t + 0.008) / 1.008 * math.pi / 2) ** 2,
-#     )
-#     betas = np.array(betas, dtype=np.float64)
-
-#     alphas = 1.0 - betas
-#     alphas_cumprod = np.cumprod(alphas, axis=0)
-#     alphas_cumprod_prev = np.append(1.0, alphas_cumprod[:-1])
-#     alphas_cumprod_next = np.append(alphas_cumprod[1:], 0.0)
-#     sqrt_alphas_cumprod = np.sqrt(alphas_cumprod)
-#     sqrt_one_minus_alphas_cumprod = np.sqrt(1.0 - alphas_cumprod)
-
-#     _alpha = sqrt_alphas_cumprod
-#     _sigma = sqrt_one_minus_alphas_cumprod
-
-#     snr = (_alpha / _sigma) ** 2
-#     return snr
-# --------------------------------------------------
-
 class ModelMeanType(enum.Enum):
     """
     Which type of output the model predicts.
@@ -150,8 +120,10 @@ class ModelMeanType(enum.Enum):
     PREVIOUS_X = enum.auto()  # the model predicts x_{t-1}
     START_X = enum.auto()  # the model predicts x_0
     EPSILON = enum.auto()  # the model predicts epsilon
-    VELOCITY = enum.auto() # the model predicts v
-
+    VELOCITY = enum.auto() # the model predicts velocity alpha_t * epsilon - sigma_t * x_0
+    VECTOR = enum.auto() # the model predicts v in flow matching d_sigma_t * epsilon - d_alpha_t * x_0
+    SCORE = enum.auto()  # the model predicts the score function
+    
 class ModelVarType(enum.Enum):
     """
     What is used as the model's output variance.
@@ -395,7 +367,8 @@ class GaussianDiffusion:
             model_mean = model_output
         elif self.model_mean_type in [ModelMeanType.START_X, 
                                       ModelMeanType.EPSILON,
-                                      ModelMeanType.VELOCITY
+                                      ModelMeanType.VELOCITY,
+                                    #   ModelMeanType.UNRAVEL,
                                       ]:
             if self.model_mean_type == ModelMeanType.START_X:
                 pred_xstart = process_xstart(model_output)
@@ -407,6 +380,10 @@ class GaussianDiffusion:
                 pred_xstart = process_xstart(
                     self._predict_xstart_from_v(x_t=x, t=t, v=model_output)
                 )
+            # else:
+            #     pred_xstart = process_xstart(
+            #         self._predict_xstart_from_u(x_t=x, t=t, u=model_output)
+                # )
             model_mean, _, _ = self.q_posterior_mean_variance(
                 x_start=pred_xstart, x_t=x, t=t
             )
@@ -438,6 +415,14 @@ class GaussianDiffusion:
             - _extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, t.shape) * v
         )
         
+    # def _predict_xstart_from_u(self, x_t, t, u):
+    #     assert x_t.shape == u.shape
+    #     return (x_t + u) / (2 * _extract_into_tensor(self.sqrt_alphas_cumprod, t, x_t.shape))
+    
+    # def _predict_xstart_from_u(self, x_t, t, u):
+    #     assert x_t.shape == u.shape
+    #     return (x_t - u) / (2 * _extract_into_tensor(self.sqrt_alphas_cumprod, t, x_t.shape))
+            
     def _predict_xstart_from_xprev(self, x_t, t, xprev):
         assert x_t.shape == xprev.shape
         return (  # (xprev - coef2*x_t) / coef1
@@ -847,7 +832,8 @@ class GaussianDiffusion:
         output = th.where((t == 0), decoder_nll, kl)
         return {"output": output, "pred_xstart": out["pred_xstart"]}
 
-    def training_losses(self, model, x_start, t, model_kwargs=None, noise=None):
+
+    def training_losses(self, model, x_start, t=None, model_kwargs=None, noise=None):
         """
         Compute training losses for a single timestep.
 
@@ -864,6 +850,9 @@ class GaussianDiffusion:
             model_kwargs = {}
         if noise is None:
             noise = th.randn_like(x_start)
+        if t is None:
+            t = th.randint(0, self.num_timesteps, (x_start.shape[0],), device=x_start.device)
+
         x_t = self.q_sample(x_start, t, noise=noise)
 
         terms = {}
@@ -871,84 +860,13 @@ class GaussianDiffusion:
         mse_loss_weight = None
         alpha = _extract_into_tensor(self.sqrt_alphas_cumprod, t, t.shape)
         sigma = _extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, t.shape)
-        snr = (alpha / sigma) ** 2
         
-        velocity = (alpha[:, None, None, None] * x_t - x_start) / sigma[:, None, None, None]
+        # velocity = (alpha[:, None, None, None] * x_t - x_start) / sigma[:, None, None, None]
         
-        if self.mse_loss_weight_type == 'constant':
-            mse_loss_weight = th.ones_like(t)
-
-        # get loss weight
-        if self.model_mean_type is ModelMeanType.EPSILON:
-            # mse_loss_weight = th.ones_like(t)
-            if self.mse_loss_weight_type.startswith("min_snr_"):
-                k = float(self.mse_loss_weight_type.split('min_snr_')[-1])
-                # min{snr, k}
-                mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).min(dim=1)[0] / snr
-
-            # elif self.mse_loss_weight_type.startswith("vmin_snr_"):
-            #     k = float(self.mse_loss_weight_type.split('vmin_snr_')[-1])
-            #     # min{snr, k}
-            #     mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).min(dim=1)[0] / (snr + 1)
-            
-            elif self.mse_loss_weight_type.startswith("max_snr_"):
-                k = float(self.mse_loss_weight_type.split('max_snr_')[-1])
-                # max{snr, k}
-                mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).max(dim=1)[0] / snr
-                
-            elif self.mse_loss_weight_type == 'lambda':
-                mse_loss_weight = sigma
-                
-            elif self.mse_loss_weight_type == 'debias':
-                mse_loss_weight = sigma / alpha
-                
-            elif self.mse_loss_weight_type == 'p2':
-                mse_loss_weight = 1 / (self.p2_k + snr)**self.p2_gamma
-
-            elif self.mse_loss_weight_type ==  'min_debias':
-                mse_loss_weight = th.minimum(sigma / alpha, th.ones_like(sigma))
-
-            elif self.mse_loss_weight_type == 'max_debias':
-                mse_loss_weight = th.maximum(sigma / alpha, th.ones_like(sigma))
-                  
-        elif self.model_mean_type is ModelMeanType.START_X:
-            if self.mse_loss_weight_type == 'trunc_snr':
-                # max{snr, 1}
-                mse_loss_weight = th.stack([snr, th.ones_like(t)], dim=1).max(dim=1)[0]
-            elif self.mse_loss_weight_type == 'snr':
-                mse_loss_weight = snr
-
-            elif self.mse_loss_weight_type == 'inv_snr':
-                mse_loss_weight = 1. / snr
-
-            elif self.mse_loss_weight_type.startswith("min_snr_"):
-                k = float(self.mse_loss_weight_type.split('min_snr_')[-1])
-                # min{snr, k}
-                mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).min(dim=1)[0]
-
-            elif self.mse_loss_weight_type.startswith("max_snr_"):
-                k = float(self.mse_loss_weight_type.split('max_snr_')[-1])
-                # min{snr, k}
-                mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).max(dim=1)[0]
-                
-            elif self.mse_loss_weight_type == 'lambda':
-                mse_loss_weight = alpha
-                
-        elif self.model_mean_type is ModelMeanType.VELOCITY:
-            if self.mse_loss_weight_type.startswith("min_snr_"):
-                k = float(self.mse_loss_weight_type.split('min_snr_')[-1])
-                # min{snr, k}
-                mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).min(dim=1)[0] / (snr + 1)
-                
-            elif self.mse_loss_weight_type == 'lambda':
-                mse_loss_weight = 2 * alpha * sigma
-
-            
-        if mse_loss_weight is None:
-            raise ValueError(f'mse loss weight is not correctly set!')
-
-        # Handle zero-terminal SNR with rescaled betas, where one position could be Infinite:
-        mse_loss_weight[snr == 0] = 1.0
+        # unravel = alpha[:, None, None, None] * x_start - sigma[:, None, None, None] * noise  # u = \sqrt{\bar{alpha}_t} * x_0 - \sqrt{1-\bar{alpha}_t} * \epsilon
+        # unravel = sigma[:, None, None, None] * noise - alpha[:, None, None, None] * x_start # u= \sqrt{1-\bar{alpha}_t}epsilon - \sqrt{\bar{alpha}_t}x_0
+        
+        mse_loss_weight = compute_mse_loss_weight(self.model_mean_type, self.mse_loss_weight_type, t, alpha, sigma, self.p2_k, self.p2_gamma)
                 
         if self.loss_type == LossType.KL or self.loss_type == LossType.RESCALED_KL:
             terms["loss"] = self._vb_terms_bpd(
@@ -994,20 +912,23 @@ class GaussianDiffusion:
                 )[0],
                 ModelMeanType.START_X: x_start,
                 ModelMeanType.EPSILON: noise,
-                ModelMeanType.VELOCITY: velocity,
+                ModelMeanType.VELOCITY: alpha[:, None, None, None] * noise - sigma[:, None, None, None] * x_start,
+                # ModelMeanType.UNRAVEL: unravel,
             }[self.model_mean_type]
             assert model_output.shape == target.shape == x_start.shape
 
             raw_mse = mean_flat((target - model_output) ** 2)
-        
-            if self.mse_loss_weight_type == 'sigma':
-                mse_loss_weight = self.weight(raw_mse.detach())
                 
             terms["mse"] = mse_loss_weight * raw_mse
 
             if self.gamma > 0:
-                regularization = self.regularization(model_output, target)
-                terms["reg"] = self.gamma * regularization  
+                # Initialize RFFCosineReg if not already
+                if self.rff_reg is None:
+                    C, H, W = x_start.shape[1:]  # (N, C, H, W)
+                    self.rff_reg = RFFCosineReg(input_shape=(C, H, W), rff_dim=512, sigma=1.0, device=x_start.device)
+                
+                regularization = 1 - self.rff_reg.regularization(model_output, target)  # 1 - cosine similarity
+                terms["reg"] = self.gamma * regularization  # [B] 
                 
             if "vb" in terms:
                 terms["loss"] = terms["mse"] + terms["vb"]
@@ -1019,21 +940,16 @@ class GaussianDiffusion:
             raise NotImplementedError(self.loss_type)
 
         return terms
-
-    def weight(self, raw_mse):
-        raw_mse = raw_mse.to(dtype=th.float64)
-        raw_mse = (raw_mse.mean() - raw_mse) * raw_mse.std().reciprocal()#.add(1e-4) 
-        weight = th.sigmoid(raw_mse)
-        return weight
-
-    def regularization(self, model_output):
-        batch_size = model_output.size(0)  
-        flattened_output = model_output.view(batch_size, -1)  
-        normalized_output = flattened_output / th.norm(flattened_output, p=2, dim=1, keepdim=True)
-        cosine_similarity_matrix = th.mm(normalized_output, normalized_output.T)  
-        avg_cosine_similarity = th.sum(cosine_similarity_matrix) / (batch_size ** 2)
-        return - avg_cosine_similarity
-        
+    
+    
+    # def regularization(self, model_output):
+    #     batch_size = model_output.size(0)  
+    #     flattened_output = model_output.view(batch_size, -1)  
+    #     normalized_output = flattened_output / th.norm(flattened_output, p=2, dim=1, keepdim=True)
+    #     cosine_similarity_matrix = th.mm(normalized_output, normalized_output.T)  
+    #     avg_cosine_similarity = th.sum(cosine_similarity_matrix) / (batch_size ** 2)
+    #     return - avg_cosine_similarity
+    
     def _prior_bpd(self, x_start):
         """
         Get the prior KL term for the variational lower-bound, measured in
@@ -1141,3 +1057,337 @@ def concat_all_gather(tensor):
 
     output = th.cat(tensors_gather, dim=0)
     return output
+
+
+def compute_mse_loss_weight(model_mean_type, mse_loss_weight_type, t, alpha, sigma, p2_k=1.0, p2_gamma=1.0):
+    snr = (alpha / sigma) ** 2
+    mse_loss_weight = None
+
+    if mse_loss_weight_type == 'constant':
+        return th.ones_like(t)
+
+    if model_mean_type.name == "EPSILON":
+        if mse_loss_weight_type.startswith("min_snr_"):
+            k = float(mse_loss_weight_type.split('min_snr_')[-1])
+            mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).min(dim=1)[0] / snr
+        elif mse_loss_weight_type.startswith("max_snr_"):
+            k = float(mse_loss_weight_type.split('max_snr_')[-1])
+            mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).max(dim=1)[0] / snr
+        elif mse_loss_weight_type == 'lambda':
+            mse_loss_weight = sigma
+        elif mse_loss_weight_type == 'debias':
+            mse_loss_weight = sigma / alpha
+        elif mse_loss_weight_type == 'p2':
+            mse_loss_weight = 1 / (p2_k + snr) ** p2_gamma
+        elif mse_loss_weight_type == 'min_debias':
+            mse_loss_weight = th.minimum(sigma / alpha, th.ones_like(sigma))
+        elif mse_loss_weight_type == 'max_debias':
+            mse_loss_weight = th.maximum(sigma / alpha, th.ones_like(sigma))
+
+    elif model_mean_type.name == "START_X":
+        if mse_loss_weight_type == 'trunc_snr':
+            mse_loss_weight = th.stack([snr, th.ones_like(t)], dim=1).max(dim=1)[0]
+        elif mse_loss_weight_type == 'snr':
+            mse_loss_weight = snr
+        elif mse_loss_weight_type == 'inv_snr':
+            mse_loss_weight = 1. / snr
+        elif mse_loss_weight_type.startswith("min_snr_"):
+            k = float(mse_loss_weight_type.split('min_snr_')[-1])
+            mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).min(dim=1)[0]
+        elif mse_loss_weight_type.startswith("max_snr_"):
+            k = float(mse_loss_weight_type.split('max_snr_')[-1])
+            mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).max(dim=1)[0]
+        elif mse_loss_weight_type == 'lambda':
+            mse_loss_weight = alpha
+
+    elif model_mean_type.name == "VELOCITY":
+        if mse_loss_weight_type.startswith("min_snr_"):
+            k = float(mse_loss_weight_type.split('min_snr_')[-1])
+            mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).min(dim=1)[0] / (snr + 1)
+        elif mse_loss_weight_type == 'lambda':
+            mse_loss_weight = 2 * alpha * sigma
+
+    if mse_loss_weight is None:
+        raise ValueError(f"Invalid mse_loss_weight_type: {mse_loss_weight_type}")
+
+    mse_loss_weight[snr == 0] = 1.0  # Handle edge cases
+    return mse_loss_weight
+
+
+
+class FlowMatching:
+    def __init__(
+        self,
+        *,
+        model_mean_type,
+        mse_loss_weight_type='constant',
+        diffusion_term,
+        diffusion_norm,
+        path_type,         
+        sampler_type="sde",   
+        p2_gamma=1,
+        p2_k=1,
+        atol=1e-6,
+        rtol=1e-5,
+    ):
+        self.path_type = path_type        
+        self.model_mean_type = model_mean_type
+        self.mse_loss_weight_type = mse_loss_weight_type
+        self.diffusion_term=diffusion_term
+        self.diffusion_norm=diffusion_norm,
+        self.sampler_type = sampler_type
+        # P2 weighting
+        self.p2_gamma = p2_gamma
+        self.p2_k = p2_k
+        #sample tolenace
+        self.atol = atol
+        self.rtol = rtol
+        
+    def expand_t_like_x(self, t, x):
+        dims = [1] * (len(x.size()) - 1)
+        return t.view(t.size(0), *dims).to(x)
+    
+    def float_equal(self, num1, num2, eps=1e-8):
+        return abs(num1 - num2) < eps
+    
+    def interpolant(self, t):
+        if self.path_type == "linear":
+            alpha_t = 1 - t
+            sigma_t = t
+            d_alpha_t = -1
+            d_sigma_t =  1
+        elif self.path_type == "cosine":
+            alpha_t = th.cos(t * np.pi / 2)
+            sigma_t = th.sin(t * np.pi / 2)
+            d_alpha_t = -np.pi / 2 * th.sin(t * np.pi / 2)
+            d_sigma_t =  np.pi / 2 * th.cos(t * np.pi / 2)
+        else:
+            raise NotImplementedError()
+
+        return alpha_t, sigma_t, d_alpha_t, d_sigma_t
+
+    def compute_drift(self, x, t):
+        """We always output sde according to score parametrization; """
+        t = self.expand_t_like_x(t, x)
+        
+        alpha_t, sigma_t, d_alpha_t, d_sigma_t = self.interpolant(t)
+        
+        alpha_ratio = d_alpha_t / alpha_t
+        
+        drift = alpha_ratio * x
+        diffusion = alpha_ratio * (sigma_t ** 2) - sigma_t * d_sigma_t
+
+        return -drift, diffusion
+
+    def compute_diffusion(self, x, t):
+        """Compute the diffusion term of the SDE
+        Args:
+          x: [batch_dim, ...], data point
+          t: [batch_dim,], time vector
+          diffusion_term: str, form of the diffusion term
+          diffusion_norm: float, norm of the diffusion term
+        """
+        t = self.expand_t_like_x(t, x)
+        choices = {
+            "constant": self.diffusion_norm,
+            "SBDM": self.diffusion_norm * self.compute_drift(x, t)[1],
+            "sigma": self.diffusion_norm * self.interpolant(t)[1],
+            "linear": self.diffusion_norm * (1 - t),
+            "decreasing": 0.25 * (self.diffusion_norm * th.cos(np.pi * t) + 1) ** 2,
+            "inccreasing-decreasing": self.diffusion_norm * th.sin(np.pi * t) ** 2,
+        }
+        try:
+            diffusion = choices[self.diffusion_term]
+        except KeyError:
+            raise NotImplementedError(f"Diffusion form {self.diffusion_term} not implemented")
+        
+        return diffusion
+
+    def convert_model_output(self, model_output, x_t, t):
+        """
+        Convert model output according to self.sampler_type:
+        - "sde": convert to score function s(x_t, t) = ∇ log p_t(x_t) = - ε / σ_t = -(x_t - α_t * x₀) / σ_t²
+        - "ode": convert to velocity field v(x_t, t) = dα_t ε + dσ_t x₀ 
+        For each model_mean_type:
+        - START_X: x₀     
+        - EPSILON: ε     
+        - VELOCITY: σ_t * ε - α_t * x₀    
+        - VECTOR: dσ_t * ε + dα_t * x₀      
+        """
+        if self.sampler_type == "sde":
+            return self.convert_model_output_to_score(model_output, x_t, t)
+        elif self.sampler_type == "ode":
+            return self.convert_model_output_to_vector(model_output, x_t, t)
+        else:
+            raise NotImplementedError(f"Unsupported sampler_type: {self.sampler_type}")
+
+    def convert_model_output_to_vector(self, model_output, x_t, t):
+        t = self.expand_t_like_x(t, x_t)
+        alpha_t, sigma_t, d_alpha_t, d_sigma_t = self.interpolant(t)
+
+        if self.model_mean_type == ModelMeanType.START_X:
+            start_x = model_output
+            noise = (x_t - alpha_t * start_x) / sigma_t
+            
+        elif self.model_mean_type == ModelMeanType.EPSILON:
+            noise = model_output
+            start_x = (x_t - sigma_t * noise) / alpha_t
+            
+        elif self.model_mean_type == ModelMeanType.VELOCITY:
+            # v = α_t * ε - σ_t * x₀ → solve ε and x₀
+            start_x = (alpha_t * x_t - sigma_t * model_output) / (alpha_t**2 + sigma_t**2)
+            noise = (sigma_t * x_t + alpha_t * model_output) / (alpha_t**2 + sigma_t**2)
+            
+        elif self.model_mean_type == ModelMeanType.VECTOR:
+            return model_output
+        
+        else:
+            raise NotImplementedError("Unsupported model_mean_type for vector")
+
+        vector = d_alpha_t * start_x + d_sigma_t * noise
+        return vector
+
+    def convert_model_output_to_score(self, model_output, x_t, t):
+        t = self.expand_t_like_x(t, x_t)
+        alpha_t, sigma_t, d_alpha_t, d_sigma_t = self.interpolant(t)
+
+        if self.model_mean_type == ModelMeanType.START_X:
+            start_x = model_output
+            score = -(x_t - alpha_t * start_x) / (sigma_t ** 2)
+
+        elif self.model_mean_type == ModelMeanType.EPSILON:
+            noise = model_output
+            score = -noise / sigma_t
+
+        elif self.model_mean_type == ModelMeanType.VELOCITY:
+            # v = α_t * ε - σ_t * x₀ → solve ε and x₀
+            noise = (sigma_t * x_t + alpha_t * model_output) / (alpha_t**2 + sigma_t**2)
+            score = -noise / sigma_t
+
+        elif self.model_mean_type == ModelMeanType.VECTOR:
+            # start_x = (sigma_t * model_output - d_sigma_t * x_t) / (sigma_t * d_alpha_t - alpha_t * d_sigma_t)
+            noise = (d_alpha_t * x_t - alpha_t * model_output) / (alpha_t * d_sigma_t - sigma_t * d_alpha_t)
+            score = -noise / sigma_t
+        elif self.model_mean_type == ModelMeanType.SCORE:
+            return model_output
+        
+        else:
+            raise NotImplementedError("Unsupported model_mean_type for score")
+
+        return score
+    
+    def q_sample(self, x_start, noise, t,):
+        t = self.expand_t_like_x(t, x_start)
+        alpha_t, sigma_t, _, _ = self.interpolant(t)
+        x_t = alpha_t * x_start + sigma_t * noise
+        return x_t
+    
+    #taining
+    def training_losses(self, model, x_start, t=None, model_kwargs=None, noise=None):
+        if model_kwargs is None:
+            model_kwargs = {}
+        if noise is None:
+            noise = th.randn_like(x_start)
+        if t is None:
+            t = th.rand(x_start.shape[0], device=x_start.device)
+        
+        alpha_t, sigma_t, d_alpha_t, d_sigma_t = self.interpolant(t)     
+                     
+        x_t = self.q_sample(x_start, noise, t)
+        
+        terms = {}
+        
+        mse_loss_weight = compute_mse_loss_weight(self.model_mean_type, self.mse_loss_weight_type, t, alpha_t, sigma_t, self.p2_k, self.p2_gamma)
+        
+        target = {
+            ModelMeanType.PREVIOUS_X: self.q_posterior_mean_variance(
+                x_start=x_start, x_t=x_t, t=t
+            )[0],
+            ModelMeanType.START_X: x_start,
+            ModelMeanType.EPSILON: noise,
+            ModelMeanType.VELOCITY: alpha_t[:, None, None, None] * noise - sigma_t[:, None, None, None] * x_start,
+            ModelMeanType.VECTOR: d_sigma_t[:, None, None, None] * noise - d_alpha_t[:, None, None, None] * x_start,
+            ModelMeanType.SCORE: - noise / sigma_t[:, None, None, None],
+            # ModelMeanType.UNRAVEL: unravel,
+        }[self.model_mean_type]
+        
+        model_output = model(x_t, t, **model_kwargs)
+        
+        assert model_output.shape == target.shape == x_start.shape
+
+        raw_mse = mean_flat((target - model_output) ** 2)
+            
+        terms["loss"] = mse_loss_weight * raw_mse
+
+        return terms
+
+    #sampling
+    def forward_with_cfg(self, model, x, t_in, guidance_scale, **model_kwargs):
+        model_output = model(x, t_in, **model_kwargs)
+        guidance_scale = guidance_scale(t_in.mean().item()) if callable(guidance_scale) else guidance_scale
+        if not self.float_equal(guidance_scale, 1.0):
+            cond, uncond = th.split(model_output, len(model_output) // 2, dim=0)
+            cond = uncond + guidance_scale * (cond - uncond)
+            model_output = th.cat([cond, cond], dim=0)
+        # convert to score or vector field
+        return self.convert_model_output(model_output, x, t_in)
+
+    def ode_sample(self, model, noise, device, num_steps=50, solver='dopri5', guidance_scale=1.0, **model_kwargs):
+        timesteps = th.linspace(0.0, 1.0, num_steps, device=device)
+        def guided_drift(t, x):
+            t_in = self.expand_t_like_x(t, x)
+            return self.forward_with_cfg(model, x, t_in, guidance_scale, **model_kwargs)
+        samples = odeint(
+            func=guided_drift,
+            y0=noise,
+            t=timesteps,
+            method=solver,
+            rtol=self.rtol,
+            atol=self.atol,
+        )
+        return samples[-1]
+
+    def sde_sample(self, model, noise, device, num_steps=50, solver="heun", guidance_scale=1.0, **model_kwargs):
+        t_series = th.linspace(1, 0, num_steps, device=device)
+        dt = t_series[1] - t_series[0]
+
+        def euler_step(x, mean_x, t):
+            w_cur = th.randn_like(x)
+            t_input = self.expand_t_like_x(t, x)
+            drift = self.forward_with_cfg(model, x, t_input, guidance_scale, **model_kwargs)
+            diffusion = self.compute_diffusion(x, t_input)
+            mean_x = x + drift * dt
+            x = mean_x + th.sqrt(2 * diffusion) * th.sqrt(dt) * w_cur
+            return x, mean_x
+
+        def heun_step(x, _, t):
+            w_cur = th.randn_like(x)
+            dw = th.sqrt(dt) * w_cur
+            t_input = self.expand_t_like_x(t, x)
+            diffusion = self.compute_diffusion(x, t_input)
+            xhat = x + th.sqrt(2 * diffusion) * dw
+            K1 = self.forward_with_cfg(model, xhat, t_input, guidance_scale, **model_kwargs)
+            xp = xhat + dt * K1
+            K2 = self.forward_with_cfg(model, xp, t_input + dt, guidance_scale, **model_kwargs)
+            return xhat + 0.5 * dt * (K1 + K2), xhat
+
+        step_fn = {"euler": euler_step, "heun": heun_step}.get(solver, None)
+        if step_fn is None:
+            raise NotImplementedError(f"Sampler type {solver} not supported.")
+
+        x = mean_x = noise
+        with th.no_grad():
+            for t_i in t_series[:-1]:
+                x, mean_x = step_fn(x, mean_x, t_i)
+        return x
+
+    def sample(self, model, noise, device, num_steps=50, solver='heun', guidance_scale=1.0, **model_kwargs):
+        if self.sampler_type == "ode": 
+            return self.ode_sample(model, noise, device, num_steps, solver=solver, guidance_scale=guidance_scale, **model_kwargs)
+        elif self.sampler_type == "sde": 
+            return self.sde_sample(model, noise, device, num_steps, solver=solver, guidance_scale=guidance_scale, **model_kwargs)
+        else: 
+            raise NotImplementedError(f"Unsupported sampler_type: {self.sampler_type}")
+
+
+    
