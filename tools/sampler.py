@@ -124,6 +124,7 @@ class Sampler:
             sample = ablation_sampler(net, latents=z, num_steps=self.args.sample_timesteps, solver=self.args.solver,
                                       discretization=self.args.discretization, schedule=self.args.schedule, scaling=self.args.scaling,
                                       class_labels=class_labels, guidance_scale=guidance_scale,)
+            
             sample = self._process_sample(sample, vae)
             self._gather_samples(all_samples, all_labels, sample, class_labels, world_size)
 
@@ -132,6 +133,39 @@ class Sampler:
 
         return all_samples, all_labels
 
+    def flow_matching_sampler(self, num_samples, sample_size, image_size, num_classes, progress_bar=False):
+        self.model.eval()
+        all_samples, all_labels = [], []
+        world_size = dist.get_world_size() if self.args.parallel else 1
+
+        if self.args.parallel:
+            sync_ema_model(self.model)
+            dist.barrier()
+
+        if progress_bar and dist_util.is_main_process():
+            pbar = tqdm(total=num_samples, desc=f"Generating Samples ({self.args.solver.capitalize()})")
+
+        vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{self.args.vae}", local_files_only=True).to(self.device) if self.args.in_chans == 4 else None
+        
+
+        while len(all_samples) * sample_size < num_samples:
+            y_cond = self._get_y_cond(sample_size, num_classes)
+            z = torch.randn([sample_size, self.args.in_chans, image_size, image_size], device=self.device)
+            class_labels, z = self._prepare_labels(y_cond, num_classes, sample_size, z)
+
+            guidance_scale = self._limited_interval_guidance(self.args.t_from, self.args.t_to, self.args.guidance_scale)
+
+            sample = self.diffusion.sample(self.model, z, self.device, num_steps=self.args.sample_timesteps, solver=self.args.solver,
+                                           class_labels=class_labels, guidance_scale=guidance_scale,)
+            
+            sample = self._process_sample(sample, vae)
+            self._gather_samples(all_samples, all_labels, sample, class_labels, world_size)
+
+            if dist_util.is_main_process() and progress_bar:
+                pbar.update(sample_size * world_size)
+
+        return all_samples, all_labels
+    
     def _get_y_cond(self, sample_size, num_classes):
         y_cond = None  
         if self.args.class_cond:
@@ -186,8 +220,15 @@ class Sampler:
     
     
     def sample(self, num_samples, sample_size, image_size, num_classes, progress_bar=False):
-        if self.args.solver == 'ddim':
-            return self.ddim_sampler(num_samples, sample_size, image_size, num_classes, progress_bar)
-        # elif self.args.solver == "heun":
+        if self.args.model_mode == 'flow':
+            return self.flow_matching_sampler(num_samples, sample_size, image_size, num_classes, progress_bar)
+        
+        elif self.args.model_mode == 'diffusion':
+            if self.args.solver == 'ddim':
+                return self.ddim_sampler(num_samples, sample_size, image_size, num_classes, progress_bar)
+            # elif self.args.solver == "heun":
+            else:
+                return self.edm_sampler(num_samples, sample_size, image_size, num_classes, progress_bar)
+            
         else:
-            return self.edm_sampler(num_samples, sample_size, image_size, num_classes, progress_bar)
+            raise ValueError(f"Unsupported model_mode: {self.args.model_mode}")
