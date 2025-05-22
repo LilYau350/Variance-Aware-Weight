@@ -156,7 +156,7 @@ class Sampler:
             guidance_scale = self._limited_interval_guidance(self.args.t_from, self.args.t_to, self.args.guidance_scale)
 
             sample = self.diffusion.sample(self.model, z, self.device, num_steps=self.args.sample_timesteps, solver=self.args.solver,
-                                           class_labels=class_labels, guidance_scale=guidance_scale,)
+                                           guidance_scale=guidance_scale, class_labels=class_labels,)
             
             sample = self._process_sample(sample, vae)
             self._gather_samples(all_samples, all_labels, sample, class_labels, world_size)
