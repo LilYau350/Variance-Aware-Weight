@@ -111,8 +111,8 @@ def parse_args():
 
     # Logging & Sampling
     parser.add_argument("--logdir", type=str, default='./logs', help="Log directory")
-    parser.add_argument("--sample_step", type=int, default=10000, help="Frequency of sampling during training")      
     parser.add_argument("--sample_size", type=int, default=64, help="Sampling size of images")
+    parser.add_argument("--sample_step", type=int, default=10000, help="Frequency of sampling during training")        
     parser.add_argument("--sample_timesteps", type=int, default=18, help="Number of sample diffusion steps")   
     parser.add_argument("--class_labels", type=int, nargs="+", default=None, help="Specify the class labels used for sampling, e.g., --class_labels 207 360 387") 
     parser.add_argument("--use_classifier", type=str, default=None, help="Path to the pre-trained classifier model")
