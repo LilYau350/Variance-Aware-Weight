@@ -913,7 +913,8 @@ class GaussianDiffusion:
                 ModelMeanType.START_X: x_start,
                 ModelMeanType.EPSILON: noise,
                 ModelMeanType.VELOCITY: alpha[:, None, None, None] * noise - sigma[:, None, None, None] * x_start,
-                # ModelMeanType.UNRAVEL: unravel,
+                # ModelMeanType.UNRAVEL: sigma[:, None, None, None] * noise - alpha[:, None, None, None] * x_start # u= \sqrt{1-\bar{alpha}_t}epsilon - \sqrt{\bar{alpha}_t}x_0
+                # ModelMeanType.UNRAVEL: # sigma[:, None, None, None] * noise - alpha[:, None, None, None] * x_start # u= \sqrt{1-\bar{alpha}_t}epsilon - \sqrt{\bar{alpha}_t}x_0
             }[self.model_mean_type]
             assert model_output.shape == target.shape == x_start.shape
 
