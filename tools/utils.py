@@ -124,16 +124,16 @@ def save_images(args, step, samples, labels, save_grid=False):
             # Save for evaluation purposes
             sample_dir = os.path.join(args.logdir, args.dataset, 'generate_sample', args.mean_type)
             os.makedirs(sample_dir, exist_ok=True)
-            shape_str = "x".join([str(x) for x in arr.shape[1:3]])
-            p = f"_{args.p}" if args.beta_schedule == "power" else ''
-            out_path = os.path.join(sample_dir, f"{args.dataset}_{shape_str}_{args.model}_{args.weight_type}_{args.beta_schedule}{p}_samples.npz")
+            # shape_str = "x".join([str(x) for x in arr.shape[1:3]])
+            # p = f"_{args.p}" if args.beta_schedule == "power" else ''
+            # out_path = os.path.join(sample_dir, f"{args.dataset}_{shape_str}_{args.model}_{args.weight_type}_{args.beta_schedule}{p}_samples.npz")
             
-            if args.class_cond:
-                label_arr = np.concatenate(labels, axis=0)[: args.num_samples]
-                np.savez(out_path, arr, label_arr)
-            else:
-                np.savez(out_path, arr)
-            print(f"Evaluation samples saved at {out_path}")
+            # if args.class_cond:
+            #     label_arr = np.concatenate(labels, axis=0)[: args.num_samples]
+            #     np.savez(out_path, arr, label_arr)
+            # else:
+            #     np.savez(out_path, arr)
+            # print(f"Evaluation samples saved at {out_path}")
 
         return arr  # Return the sampled images array for evaluation
         
@@ -172,7 +172,7 @@ def save_metrics_to_csv(args, eval_dir, metrics, step):
         + (f"lr_decay_{args.cosine_decay}_" if args.cosine_decay else "")        
         + f"dropout_{args.dropout}_"
         + f"drop_label_{args.drop_label_prob}_"
-        + f"sample_t_{args.sample_timesteps}_"
+        + f"sample_t_{args.sample_steps}_"
         + f"cfg_{args.guidance_scale}_"
         + f"beta_sched_{args.beta_schedule}_" + (f"{args.p}_" if args.beta_schedule == 'power' else "")
         + f"target_{args.mean_type}_"
@@ -192,3 +192,4 @@ def save_metrics_to_csv(args, eval_dir, metrics, step):
         # writer.writerow([step] + list(metrics.values()))
         formatted_values = [f"{value:.2f}" if isinstance(value, (float, int)) else value for value in metrics.values()]
         writer.writerow([step] + formatted_values)
+
