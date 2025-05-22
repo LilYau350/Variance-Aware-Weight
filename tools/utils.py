@@ -124,16 +124,16 @@ def save_images(args, step, samples, labels, save_grid=False):
             # Save for evaluation purposes
             sample_dir = os.path.join(args.logdir, args.dataset, 'generate_sample', args.mean_type)
             os.makedirs(sample_dir, exist_ok=True)
-            # shape_str = "x".join([str(x) for x in arr.shape[1:3]])
-            # p = f"_{args.p}" if args.beta_schedule == "power" else ''
-            # out_path = os.path.join(sample_dir, f"{args.dataset}_{shape_str}_{args.model}_{args.weight_type}_{args.beta_schedule}{p}_samples.npz")
+            shape_str = "x".join([str(x) for x in arr.shape[1:3]])
+            p = f"_{args.p}" if args.beta_schedule == "power" else ''
+            out_path = os.path.join(sample_dir, f"{args.dataset}_{shape_str}_{args.model}_{args.weight_type}_{args.beta_schedule}{p}_samples.npz")
             
-            # if args.class_cond:
-            #     label_arr = np.concatenate(labels, axis=0)[: args.num_samples]
-            #     np.savez(out_path, arr, label_arr)
-            # else:
-            #     np.savez(out_path, arr)
-            # print(f"Evaluation samples saved at {out_path}")
+            if args.class_cond:
+                label_arr = np.concatenate(labels, axis=0)[: args.num_samples]
+                np.savez(out_path, arr, label_arr)
+            else:
+                np.savez(out_path, arr)
+            print(f"Evaluation samples saved at {out_path}")
 
         return arr  # Return the sampled images array for evaluation
         
