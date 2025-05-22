@@ -121,7 +121,7 @@ class Sampler:
 
             guidance_scale = self._limited_interval_guidance(self.args.t_from, self.args.t_to, self.args.guidance_scale)
 
-            sample = ablation_sampler(net, latents=z, num_steps=self.args.sample_timesteps, solver=self.args.solver,
+            sample = ablation_sampler(net, latents=z, num_steps=self.args.sample_steps, solver=self.args.solver,
                                       discretization=self.args.discretization, schedule=self.args.schedule, scaling=self.args.scaling,
                                       class_labels=class_labels, guidance_scale=guidance_scale,)
             
@@ -155,7 +155,7 @@ class Sampler:
 
             guidance_scale = self._limited_interval_guidance(self.args.t_from, self.args.t_to, self.args.guidance_scale)
 
-            sample = self.diffusion.sample(self.model, z, self.device, num_steps=self.args.sample_timesteps, solver=self.args.solver,
+            sample = self.diffusion.sample(self.model, z, self.device, num_steps=self.args.sample_steps, solver=self.args.solver,
                                            guidance_scale=guidance_scale, class_labels=class_labels,)
             
             sample = self._process_sample(sample, vae)
