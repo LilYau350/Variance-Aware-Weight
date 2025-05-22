@@ -31,7 +31,7 @@ def parse_args():
     # Gaussian Diffusion
     parser.add_argument("--beta_schedule", type=str, default='cosine', help="Beta schedule type 'linear', 'cosine', 'laplace', and 'power'.")
     parser.add_argument("--p", type=float, default=2, help="power for power schedule.")
-    parser.add_argument("--T", type=int, default=1000, help="Number of diffusion steps")
+    parser.add_argument("--diffusion_steps", type=int, default=1000, help="Number of diffusion steps")
     parser.add_argument("--mean_type", type=str, default='EPSILON', choices=['PREVIOUS_X', 'START_X', 'EPSILON', 'VELOCITY'], help="Predict variable")
     parser.add_argument("--var_type", type=str, default='FIXED_LARGE', choices=['FIXED_LARGE', 'FIXED_SMALL', 'LEARNED', 'LEARNED_RANGE'], help="Variance type")
     parser.add_argument("--learn_sigma", default=False, type=str2bool, help="Set learn_sigma to enable learn distribution sigma.")    
@@ -49,7 +49,7 @@ def parse_args():
     parser.add_argument('--discretization', type=str, default='edm', choices=['vp', 've', 'iddpm', 'edm'], help='Discretization method for edm solver.')
     parser.add_argument('--schedule', type=str, default='linear', choices=['vp', 've', 'linear'], help='Noise schedule for edm sampling.')
     parser.add_argument('--scaling', type=str, default='none', choices=['vp', 'none'], help='Scaling strategy for model output in edm.')
-    parser.add_argument("--sample_timesteps", type=int, default=18, help="Number of sample diffusion steps")
+    parser.add_argument("--sample_steps", type=int, default=18, help="Number of sample diffusion steps")
     parser.add_argument("--class_labels", type=int, nargs="+", default=[207, 360, 387, 974, 88, 979, 417, 279], help="Specify the class labels used for sampling, e.g., --class_labels 207 360 387")
     parser.add_argument("--num_samples", type=int, default=50000, help="The number of generated images for evaluation")
     parser.add_argument("--sample_size", type=int, default=64, help="Sampling size of images")
