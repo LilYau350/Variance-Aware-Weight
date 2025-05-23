@@ -15,7 +15,6 @@ from tools.nn import mean_flat
 from tools.losses import normal_kl, discretized_gaussian_log_likelihood
 from tools import logger
 import torch.nn.functional as F
-from transport.path import ICPlan, VPCPlan, GVPCPlan
 
 class RFFCosineReg:
     def __init__(self, input_dim, rff_dim=512, sigma=1.0, device='cuda'):
