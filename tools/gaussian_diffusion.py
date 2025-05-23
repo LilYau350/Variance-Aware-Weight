@@ -1154,8 +1154,8 @@ class FlowMatching:
         if self.path_type == "linear":
             alpha_t = 1 - t
             sigma_t = t
-            d_alpha_t = -1
-            d_sigma_t =  1
+            d_alpha_t = th.full_like(t, -1.0)  
+            d_sigma_t = th.full_like(t, 1.0)  
         elif self.path_type == "cosine":
             alpha_t = th.cos(t * np.pi / 2)
             sigma_t = th.sin(t * np.pi / 2)
