@@ -151,4 +151,4 @@ dependencies:
       - xgboost==2.0.2
       - xformers==0.0.23
       - zipp==3.20.2
-
+      - torchdiffeq==0.2.5
