@@ -1114,7 +1114,6 @@ def compute_mse_loss_weight(model_mean_type, mse_loss_weight_type, t, alpha, sig
     return mse_loss_weight
 
 
-
 class FlowMatching:
     def __init__(
         self,
@@ -1187,7 +1186,6 @@ class FlowMatching:
             raise NotImplementedError(f"Unsupported sampler_type: {self.sampler_type}")
 
     def convert_model_output_to_vector(self, model_output, x_t, t):
-        t = self.expand_t_like_x(t, x_t)
         alpha_t, sigma_t, d_alpha_t, d_sigma_t = self.interpolant(t)
 
         if self.model_mean_type == ModelMeanType.START_X:
@@ -1213,7 +1211,6 @@ class FlowMatching:
         return vector
 
     def convert_model_output_to_score(self, model_output, x_t, t):
-        t = self.expand_t_like_x(t, x_t)
         alpha_t, sigma_t, d_alpha_t, d_sigma_t = self.interpolant(t)
 
         if self.model_mean_type == ModelMeanType.START_X:
@@ -1285,7 +1282,8 @@ class FlowMatching:
 
     #sampling
     def forward_with_cfg(self, model, x, t_in, guidance_scale, **model_kwargs):
-        model_output = model(x, t_in, **model_kwargs)
+        t = t_in.view(x.shape[0]) # make sure the shape fo t inputs mdoel is [batch_dim]
+        model_output = model(x, t, **model_kwargs)
         guidance_scale = guidance_scale(t_in.mean().item()) if callable(guidance_scale) else guidance_scale
         if not self.float_equal(guidance_scale, 1.0):
             cond, uncond = th.split(model_output, len(model_output) // 2, dim=0)
@@ -1323,7 +1321,6 @@ class FlowMatching:
             drift_coef: coefficient f(t) in drift term: f(t) * x_t
             diffusion_coef: scalar beta(t)
         """
-        t = self.expand_t_like_x(t, x)
         alpha_t, sigma_t, d_alpha_t, d_sigma_t = self.interpolant(t)
 
         sigma_ratio = d_sigma_t / sigma_t  # f(t) = dσ/σ
@@ -1343,7 +1340,6 @@ class FlowMatching:
             x: [batch_dim, ...] x_t
             t: [batch_dim,] time
         """
-        t = self.expand_t_like_x(t, x)
         alpha_t, sigma_t, d_alpha_t, d_sigma_t = self.interpolant(t)
         sigma_ratio = d_sigma_t / sigma_t
 
@@ -1411,7 +1407,6 @@ class FlowMatching:
                 x, mean_x = step_fn(x, mean_x, t_i)
         return x
 
-
     def sample(self, model, noise, device, num_steps=50, solver='heun', guidance_scale=1.0, **model_kwargs):
         if self.sampler_type == "ode": 
             return self.ode_sample(model, noise, device, num_steps, solver=solver, guidance_scale=guidance_scale, **model_kwargs)
@@ -1419,7 +1414,3 @@ class FlowMatching:
             return self.sde_sample(model, noise, device, num_steps, solver=solver, guidance_scale=guidance_scale, **model_kwargs)
         else: 
             raise NotImplementedError(f"Unsupported sampler_type: {self.sampler_type}")
-
-
-
-    
