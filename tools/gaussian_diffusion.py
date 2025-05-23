@@ -1340,13 +1340,11 @@ class FlowMatching:
             x: [batch_dim, ...] x_t
             t: [batch_dim,] time
         """
-        alpha_t, sigma_t, d_alpha_t, d_sigma_t = self.interpolant(t)
-        sigma_ratio = d_sigma_t / sigma_t
 
         choices = {
             "constant": self.diffusion_norm,
-            "SBDM": self.diffusion_norm * (sigma_ratio * (alpha_t ** 2) - alpha_t * d_alpha_t),
-            "alpha": self.diffusion_norm * alpha_t,
+            "SBDM": self.diffusion_norm * self.compute_drift_diffusion_coefficient(x, t)[1],
+            "alpha": self.diffusion_norm * self.interpolant(t)[0],
             "linear": self.diffusion_norm * t,
             "decreasing": 0.25 * (self.diffusion_norm * th.cos(np.pi * (1 - t)) + 1) ** 2,
             "inccreasing-decreasing": self.diffusion_norm * th.sin(np.pi * t) ** 2,
