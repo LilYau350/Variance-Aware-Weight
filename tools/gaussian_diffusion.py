@@ -1300,9 +1300,6 @@ class FlowMatching:
         mse_loss_weight = compute_mse_loss_weight(self.model_mean_type, self.mse_loss_weight_type, t, alpha_t, sigma_t, self.p2_k, self.p2_gamma)
         
         target = {
-            ModelMeanType.PREVIOUS_X: self.q_posterior_mean_variance(
-                x_start=x_start, x_t=x_t, t=t
-            )[0],
             ModelMeanType.START_X: x_start,
             ModelMeanType.EPSILON: noise,
             ModelMeanType.VELOCITY: alpha_t[:, None, None, None] * noise - sigma_t[:, None, None, None] * x_start,
