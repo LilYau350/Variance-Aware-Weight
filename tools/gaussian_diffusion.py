@@ -1144,6 +1144,8 @@ class FlowMatching:
         self.rtol = rtol
         
     def expand_t_like_x(self, t, x):
+        if t.dim() == 0:
+            t = t.expand(x.shape[0])
         dims = [1] * (len(x.size()) - 1)
         return t.view(t.size(0), *dims).to(x)
     
