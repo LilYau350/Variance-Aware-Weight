@@ -1265,7 +1265,7 @@ class FlowMatching:
             ModelMeanType.START_X: x_start,
             ModelMeanType.EPSILON: noise,
             ModelMeanType.VELOCITY: alpha_t[:, None, None, None] * noise - sigma_t[:, None, None, None] * x_start,
-            ModelMeanType.VECTOR: d_sigma_t[:, None, None, None] * noise - d_alpha_t[:, None, None, None] * x_start,
+            ModelMeanType.VECTOR: d_sigma_t[:, None, None, None] * noise + d_alpha_t[:, None, None, None] * x_start,
             ModelMeanType.SCORE: - noise / sigma_t[:, None, None, None],
             # ModelMeanType.UNRAVEL: unravel,
         }[self.model_mean_type]
@@ -1293,7 +1293,7 @@ class FlowMatching:
         return self.convert_model_output(model_output, x, t_in)
 
     def ode_sample(self, model, noise, device, num_steps=50, solver='dopri5', guidance_scale=1.0, **model_kwargs):
-        timesteps = th.linspace(0.0, 1.0, num_steps, device=device)
+        timesteps = th.linspace(1.0, 0.0, num_steps, device=device)
         def guided_drift(t, x):
             t_in = self.expand_t_like_x(t, x)
             return self.forward_with_cfg(model, x, t_in, guidance_scale, **model_kwargs)
