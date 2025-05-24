@@ -1133,7 +1133,7 @@ class FlowMatching:
         self.model_mean_type = model_mean_type
         self.mse_loss_weight_type = mse_loss_weight_type
         self.diffusion_term=diffusion_term
-        self.diffusion_norm=diffusion_norm,
+        self.diffusion_norm=diffusion_norm
         self.sampler_type = sampler_type
         # P2 weighting
         self.p2_gamma = p2_gamma
