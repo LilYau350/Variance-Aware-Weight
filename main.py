@@ -63,13 +63,10 @@ def parse_args():
     # Flow matching
     parser.add_argument("--path_type", type=str, default='linear', choices=['linear', 'cosine'], help="Path type for flow matching")    
     parser.add_argument('--sampler_type', type=str, default='sde', choices=['sde', 'ode'], help='Type of flow matching sampler to use')   
-    parser.add_argument("--diffusion_term", type=str, default="sigma", choices=["constant", "SBDM", "sigma", "linear", "decreasing", "increasing-decreasing"],
-                                                    help="form of diffusion coefficient in the SDE")
-    parser.add_argument("--diffusion_norm", type=float, default=1.0)
-    # Discrete Diffusion
+    # Discrete Diffusionsdasmnnbmmnb
     parser.add_argument("--beta_schedule", type=str, default='cosine', help="Beta schedule type 'linear', 'cosine', 'laplace', and 'power'.")
     parser.add_argument("--p", type=float, default=2, help="power for power schedule.")
-    parser.add_argument("--T", type=int, default=1000, help="Number of diffusion steps")
+    parser.add_argument("--diffusion_steps", type=int, default=1000, help="Number of diffusion steps")
     # loss type for diffusion or flow matching
     parser.add_argument("--mean_type", type=str, default='EPSILON', choices=['PREVIOUS_X', 'START_X', 'EPSILON', 'VELOCITY', 'VECTOR', 'SCORE'], help="Predict variable")
     parser.add_argument("--var_type", type=str, default='FIXED_LARGE', choices=['FIXED_LARGE', 'FIXED_SMALL', 'LEARNED', 'LEARNED_RANGE'], help="Variance type")
@@ -182,7 +179,6 @@ def build_dataset(args):
             sampler=train_sampler,          
             num_workers=args.num_workers,
             drop_last=True,
-            pin_memory=True,  
         )
         
     return train_loader, test_loader
@@ -231,9 +227,9 @@ def build_model(args):
 
 def build_diffusion(args, use_ddim=False):
     if args.model_mode == "diffusion":
-        betas = get_named_beta_schedule(args.beta_schedule, args.T, args.p)
+        betas = get_named_beta_schedule(args.beta_schedule, args.diffusion_steps, args.p)
         timestep_respacing = (
-            f"ddim{args.sample_steps}" if use_ddim and args.sample_steps < args.T else [args.T]
+            f"ddim{args.sample_steps}" if use_ddim and args.sample_steps < args.diffusion_steps else [args.diffusion_steps]
         )
         diffusion_kwargs = dict(
             betas=betas,
@@ -248,7 +244,7 @@ def build_diffusion(args, use_ddim=False):
         )
         if use_ddim:
             return SpacedDiffusion(
-                use_timesteps=space_timesteps(args.T, timestep_respacing),
+                use_timesteps=space_timesteps(args.diffusion_steps, timestep_respacing),
                 **diffusion_kwargs,
             )
         else:
@@ -257,9 +253,7 @@ def build_diffusion(args, use_ddim=False):
     elif args.model_mode == "flow":
         flow_kwargs = dict(
             model_mean_type=ModelMeanType[args.mean_type.upper()],
-            mse_loss_weight_type=args.weight_type,
-            diffusion_term=args.diffusion_term,   
-            diffusion_norm=args.diffusion_norm,         
+            mse_loss_weight_type=args.weight_type,    
             path_type=args.path_type,   
             sampler_type=args.sampler_type,         
             p2_gamma=args.p2_gamma,
