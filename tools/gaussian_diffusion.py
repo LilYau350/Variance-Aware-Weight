@@ -1167,24 +1167,6 @@ class FlowMatching:
 
         return alpha_t, sigma_t, d_alpha_t, d_sigma_t
 
-    def convert_model_output(self, model_output, x_t, t):
-        """
-        Convert model output according to self.sampler_type:
-        - "sde": convert to score function s(x_t, t) = ∇ log p_t(x_t) = - ε / σ_t = -(x_t - α_t * x₀) / σ_t²
-        - "ode": convert to velocity field v(x_t, t) = dα_t ε + dσ_t x₀ 
-        For each model_mean_type:
-        - START_X: x₀     
-        - EPSILON: ε     
-        - VELOCITY: σ_t * ε - α_t * x₀    
-        - VECTOR: dσ_t * ε + dα_t * x₀      
-        """
-        if self.sampler_type == "sde":
-            return self.convert_model_output_to_score(model_output, x_t, t)
-        elif self.sampler_type == "ode":
-            return self.convert_model_output_to_vector(model_output, x_t, t)
-        else:
-            raise NotImplementedError(f"Unsupported sampler_type: {self.sampler_type}")
-
     def convert_model_output_to_vector(self, model_output, x_t, t):
         alpha_t, sigma_t, d_alpha_t, d_sigma_t = self.interpolant(t)
 
@@ -1228,7 +1210,7 @@ class FlowMatching:
 
         elif self.model_mean_type == ModelMeanType.VECTOR:
             # start_x = (sigma_t * model_output - d_sigma_t * x_t) / (sigma_t * d_alpha_t - alpha_t * d_sigma_t)
-            noise = (d_alpha_t * x_t - alpha_t * model_output) / (alpha_t * d_sigma_t - sigma_t * d_alpha_t)
+            noise = (d_alpha_t * x_t - alpha_t * model_output) / (sigma_t * d_alpha_t - alpha_t * d_sigma_t)
             score = -noise / sigma_t
         elif self.model_mean_type == ModelMeanType.SCORE:
             return model_output
@@ -1265,7 +1247,7 @@ class FlowMatching:
             ModelMeanType.START_X: x_start,
             ModelMeanType.EPSILON: noise,
             ModelMeanType.VELOCITY: alpha_t[:, None, None, None] * noise - sigma_t[:, None, None, None] * x_start,
-            ModelMeanType.VECTOR: d_sigma_t[:, None, None, None] * noise + d_alpha_t[:, None, None, None] * x_start,
+            ModelMeanType.VECTOR: d_alpha_t[:, None, None, None] * x_start + d_sigma_t[:, None, None, None] * noise,
             ModelMeanType.SCORE: - noise / sigma_t[:, None, None, None],
             # ModelMeanType.UNRAVEL: unravel,
         }[self.model_mean_type]
@@ -1290,13 +1272,16 @@ class FlowMatching:
             cond = uncond + guidance_scale * (cond - uncond)
             model_output = th.cat([cond, cond], dim=0)
         # convert to score or vector field
-        return self.convert_model_output(model_output, x, t_in)
+        return model_output #self.convert_model_output(model_output, x, t_in)
 
     def ode_sample(self, model, noise, device, num_steps=50, solver='dopri5', guidance_scale=1.0, **model_kwargs):
         timesteps = th.linspace(1.0, 0.0, num_steps, device=device)
+        
         def guided_drift(t, x):
             t_in = self.expand_t_like_x(t, x)
-            return self.forward_with_cfg(model, x, t_in, guidance_scale, **model_kwargs)
+            model_output = self.forward_with_cfg(model, x, t_in, guidance_scale, **model_kwargs)
+            return self.convert_model_output_to_vector(model_output, x, t_in)
+        
         samples = odeint(
             func=guided_drift,
             y0=noise,
@@ -1307,103 +1292,59 @@ class FlowMatching:
         )
         return samples[-1]
     
-    def compute_drift_diffusion_coefficient(self, x, t):
+    def compute_diffusion(self, t_cur):
+        # return 2 * t_cur 
+        return self.interpolant(t_cur)[1] ** 2
+    
+    def sde_sample(self, model, noise, device, num_steps=50, solver='heun', guidance_scale=1.0, **model_kwargs):
         """
-        Compute drift and diffusion *coefficients* (not full SDE terms) for reverse-time SDE.
-        This is based on score parameterization where:
-            dx = [drift_coef - beta * score] dt + sqrt(2 * beta) dw
-
-        Args:
-            x: [batch_dim, ...] x_t, the current sample at time t (not the score)
-            t: [batch_dim,] time
-
-        Returns:
-            drift_coef: coefficient f(t) in drift term: f(t) * x_t
-            diffusion_coef: scalar beta(t)
+        SDE sampler with Euler or Heun method and final deterministic step.
+        x_t is the initial latent (x_T), denoised to x_0.
         """
-        alpha_t, sigma_t, d_alpha_t, d_sigma_t = self.interpolant(t)
+        def compute_drift(x, t_tensor, diffusion):
+            out = self.forward_with_cfg(model, x, t_tensor, guidance_scale, **model_kwargs)
+            s = self.convert_model_output_to_score(out, x, t_tensor)
+            v = self.convert_model_output_to_vector(out, x, t_tensor)
+            return v - 0.5 * diffusion * s
 
-        sigma_ratio = d_sigma_t / sigma_t  # f(t) = dσ/σ
+        t_steps = th.linspace(1.0, 0.04, num_steps, dtype=th.float64, device=device)
+        t_steps = th.cat([t_steps, th.tensor([0.0], dtype=th.float64, device=device)])
+        x_t = noise
 
-        drift_coef = -sigma_ratio * x  # Drift = -f(t) * x_t
-        diffusion_coef = sigma_ratio * (alpha_t ** 2) - alpha_t * d_alpha_t  # beta(t)
-
-        return drift_coef, diffusion_coef
-
-    def compute_diffusion(self, x, t):
-        """
-        Compute beta(t) (diffusion coefficient) based on the selected diffusion_term.
-        It will be used in reverse-time SDE:
-            dx = drift - beta * score + sqrt(2 * beta) * dw
-
-        Args:
-            x: [batch_dim, ...] x_t
-            t: [batch_dim,] time
-        """
-
-        choices = {
-            "constant": self.diffusion_norm,
-            "SBDM": self.diffusion_norm * self.compute_drift_diffusion_coefficient(x, t)[1],
-            "alpha": self.diffusion_norm * self.interpolant(t)[0],
-            "linear": self.diffusion_norm * t,
-            "decreasing": 0.25 * (self.diffusion_norm * th.cos(np.pi * (1 - t)) + 1) ** 2,
-            "inccreasing-decreasing": self.diffusion_norm * th.sin(np.pi * t) ** 2,
-        }
-        try:
-            diffusion_coef = choices[self.diffusion_term]
-        except KeyError:
-            raise NotImplementedError(f"Diffusion form {self.diffusion_term} not implemented")
-
-        return diffusion_coef
-
-    def compute_sde_step(self, x, t, score):
-        """
-        Compute drift and diffusion term for reverse SDE step:
-            dx = [drift_coef - beta * score] dt + sqrt(2 * beta) * dw
-        """
-        drift_coef, _ = self.compute_drift_diffusion_coefficient(x, t)
-        beta = self.compute_diffusion(x, t)
-        drift = drift_coef - beta * score
-        diffusion = th.sqrt(2 * beta)
-        return drift, diffusion
-
-    def sde_sample(self, model, noise, device, num_steps=50, solver="heun", guidance_scale=1.0, **model_kwargs):
-        t_series = th.linspace(1, 0, num_steps, device=device)
-        dt = t_series[1] - t_series[0]
-
-        def euler_step(x, mean_x, t):
-            t_input = self.expand_t_like_x(t, x)
-            score = self.forward_with_cfg(model, x, t_input, guidance_scale, **model_kwargs)
-            drift, diffusion = self.compute_sde_step(x, t_input, score)
-            w_cur = th.randn_like(x)
-            mean_x = x + drift * dt
-            x = mean_x + diffusion * th.sqrt(dt) * w_cur
-            return x, mean_x
-
-        def heun_step(x, mean_x, t):
-            t_input = self.expand_t_like_x(t, x)
-            score = self.forward_with_cfg(model, x, t_input, guidance_scale, **model_kwargs)
-            drift, diffusion = self.compute_sde_step(x, t_input, score)
-            w_cur = th.randn_like(x)
-            x_hat = x + drift * dt + diffusion * th.sqrt(dt) * w_cur
-
-            t_input_next = self.expand_t_like_x(t + dt, x_hat)
-            score_hat = self.forward_with_cfg(model, x_hat, t_input_next, guidance_scale, **model_kwargs)
-            drift_hat, diffusion_hat = self.compute_sde_step(x_hat, t_input_next, score_hat)
-
-            mean_x = x + 0.5 * dt * (drift + drift_hat)
-            x = mean_x + diffusion_hat * th.sqrt(dt) * w_cur
-            return x, mean_x
-
-        step_fn = {"euler": euler_step, "heun": heun_step}.get(solver, None)
-        if step_fn is None:
-            raise NotImplementedError(f"Sampler type {solver} not supported.")
-
-        x = mean_x = noise
         with th.no_grad():
-            for t_i in t_series[:-1]:
-                x, mean_x = step_fn(x, mean_x, t_i)
-        return x
+            for t_cur, t_next in zip(t_steps[:-2], t_steps[1:-1]):
+                dt = t_next - t_cur
+                t_tensor = self.expand_t_like_x(t_cur, x_t)
+                diffusion = self.compute_diffusion(t_tensor)
+
+                d_cur = compute_drift(x_t, t_tensor, diffusion)
+
+                eps = th.randn_like(x_t)
+                noise_term = th.sqrt(diffusion) * eps * th.sqrt(th.abs(dt))
+
+                if solver == 'euler':
+                    x_t = x_t + d_cur * dt + noise_term
+
+                elif solver == 'heun':
+                    x_pred = x_t + d_cur * dt + noise_term
+                    t_next_tensor = self.expand_t_like_x(t_next, x_pred)
+                    diffusion_next = self.compute_diffusion(t_next_tensor)
+                    d_next = compute_drift(x_pred, t_next_tensor, diffusion_next)
+                    x_t = x_t + 0.5 * (d_cur + d_next) * dt + noise_term
+
+                else:
+                    raise ValueError(f"Unknown solver: {solver}")
+
+            # Final deterministic step
+            t_cur, t_next = t_steps[-2], t_steps[-1]
+            dt = t_next - t_cur
+            t_tensor = self.expand_t_like_x(t_cur, x_t)
+            diffusion = self.compute_diffusion(t_tensor)
+
+            d_cur = compute_drift(x_t, t_tensor, diffusion)
+            mean_x = x_t + d_cur * dt  # no noise
+
+        return mean_x
 
     def sample(self, model, noise, device, num_steps=50, solver='heun', guidance_scale=1.0, **model_kwargs):
         if self.sampler_type == "ode": 
