@@ -1293,7 +1293,7 @@ class FlowMatching:
         return samples[-1]
     
     def compute_diffusion(self, t_cur):
-        # return 2 * t_cur 
+        # return self.interpolant(t_cur)[1]
         return self.interpolant(t_cur)[1] ** 2
     
     def sde_sample(self, model, noise, device, num_steps=50, solver='heun', guidance_scale=1.0, **model_kwargs):
