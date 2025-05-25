@@ -1120,8 +1120,6 @@ class FlowMatching:
         *,
         model_mean_type,
         mse_loss_weight_type='constant',
-        diffusion_term,
-        diffusion_norm,
         path_type,         
         sampler_type="sde",   
         p2_gamma=1,
@@ -1132,8 +1130,6 @@ class FlowMatching:
         self.path_type = path_type        
         self.model_mean_type = model_mean_type
         self.mse_loss_weight_type = mse_loss_weight_type
-        self.diffusion_term=diffusion_term
-        self.diffusion_norm=diffusion_norm
         self.sampler_type = sampler_type
         # P2 weighting
         self.p2_gamma = p2_gamma
