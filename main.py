@@ -45,7 +45,7 @@ def parse_args():
     parser.add_argument("--eval", default=True, type=str2bool, help="Load checkpoint and evaluate FID...")
 
     parser.add_argument("--data_dir", type=str, default='./data', help="Path to the dataset directory")
-    parser.add_argument("--dataset", type=str, default='CIFAR-10', choices=['CIFAR-10', 'Gaussian', 'CelebA', 'ImageNet', 'LSUN', 'Latent', 'Feature'], help="Dataset to train on")
+    parser.add_argument("--dataset", type=str, default='CIFAR-10', choices=['CIFAR-10', 'Gaussian', 'CelebA', 'ImageNet', 'LSUN', 'Latent', 'Latent_Pixel'], help="Dataset to train on")
     parser.add_argument("--patch_size", type=int, default=None, help="Patch Size for ViT, DiT, U-ViT, type is int")
     parser.add_argument("--in_chans", type=int, default=3, help="Number of input channels for the model")
     parser.add_argument("--image_size", type=int, default=32, help="Image size")
@@ -73,9 +73,8 @@ def parse_args():
     parser.add_argument("--p2_gamma", type=int, default=1, help="hyperparameter for P2 weight")
     parser.add_argument("--p2_k", type=int, default=1, help="hyperparameter for P2 weight")
     
-    # parser.add_argument("--enc-type", type=str, default="dinov2-vit-b", help="Encoder specification, e.g. 'dinov2-vit-b' or comma-separated list")
+    parser.add_argument("--enc-type", type=str, default="dinov2-vit-b", help="Encoder specification, e.g. 'dinov2-vit-b' or comma-separated list")
     parser.add_argument("--encoder-depth", type=int, default=0, help="How many encoder blocks from SiT to expose to z-projection")
-    # parser.add_argument("--proj-coeff", type=float, default=0.5, help="Loss weight for projection loss (proj_loss)")
 
     # Training
     parser.add_argument("--num_workers", type=int, default=16, help="Number of workers for DataLoader")    
@@ -162,7 +161,7 @@ def build_dataset(args):
         image_size = args.image_size or 32  # Assuming latent is 32x32x4
         train_loader, test_loader = load_dataset(
             args.data_dir, args.dataset, args.batch_size, image_size, num_workers=args.num_workers, shuffle=not args.parallel)
-    elif args.dataset == 'Feature':
+    elif args.dataset == 'Latent_Pixel':
         image_size = args.image_size or 32  # Assuming latent is 32x32x4
         train_loader, test_loader = load_dataset(
             args.data_dir, args.dataset, args.batch_size, image_size, num_workers=args.num_workers, shuffle=not args.parallel)

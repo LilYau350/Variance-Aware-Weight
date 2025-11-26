@@ -11,10 +11,6 @@ import torch.distributed as dist
 import h5py
 from tools.dist_util import is_main_process
 
-Image.MAX_IMAGE_PIXELS = None
-PngImagePlugin.MAX_TEXT_CHUNK = 1024 * (2 ** 20)  # 1024MB
-PngImagePlugin.MAX_TEXT_MEMORY = 128 * (2 ** 20)  # 128MB
-
 
 # Helper functions for cropping
 def center_crop_arr(pil_image, image_size):
@@ -78,14 +74,13 @@ class Latent(Dataset):
 
     def __getitem__(self, idx):
         with h5py.File(self.h5_file, 'r') as f:
-            img = f[f'{self.dataset_type}_latents'][idx]
+            latent = f[f'{self.dataset_type}_latents'][idx]
             label = f[f'{self.dataset_type}_labels'][idx]
+        latent = torch.tensor(latent.copy(), dtype=torch.float32)
+        return latent, label
 
-        img = torch.tensor(img.copy(), dtype=torch.float32)
 
-        return img, label
-
-class LatentFeatureDataset(Dataset):
+class LatentWithPixelDataset(Dataset):
     def __init__(self, h5_file, dataset_type="train"):
         super().__init__()
         self.h5_file = h5_file
@@ -100,15 +95,16 @@ class LatentFeatureDataset(Dataset):
 
     def __getitem__(self, idx):
         with h5py.File(self.h5_file, 'r') as f:
-            img = f[f'{self.dataset_type}_latents'][idx]
-            feature = f[f'{self.dataset_type}_features'][idx]
+            latent = f[f'{self.dataset_type}_latents'][idx]
+            pixel = f[f'{self.dataset_type}_pixels'][idx]
             label = f[f'{self.dataset_type}_labels'][idx]
 
-        img = torch.tensor(img.copy(), dtype=torch.float32)
-        feature = torch.tensor(feature.copy(), dtype=torch.float32)
+        latent = torch.tensor(latent.copy(), dtype=torch.float32)
+        pixel = torch.tensor(pixel.copy(), dtype=torch.float32)
 
-        return img, feature, label
+        return latent, pixel, label
     
+
 # CIFAR10 Dataset
 def load_cifar10(data_dir, image_size, random_crop, random_flip,):
     
@@ -175,10 +171,10 @@ def load_latent(data_dir):
     
     return train_dataset, val_dataset
 
-def load_latent_feature(data_dir):
+def load_latent_pixel(data_dir):
     h5_file = os.path.join(data_dir)
-    train_dataset = LatentFeatureDataset(h5_file,dataset_type="train")
-    val_dataset = LatentFeatureDataset(h5_file, dataset_type="val")
+    train_dataset = LatentWithPixelDataset(h5_file, dataset_type="train")
+    val_dataset = LatentWithPixelDataset(h5_file,  dataset_type="val")
     return train_dataset, val_dataset
 
 # LSUN Dataset Loader
@@ -210,10 +206,10 @@ def load_dataset(data_dir, dataset_name, batch_size=128, image_size=None, random
         train_dataset, test_dataset = load_imagenet(data_dir, image_size, random_crop, random_flip,)
         
     elif dataset_name == 'Latent':
-        train_dataset, test_dataset = load_latent(data_dir)#, random_flip)  
+        train_dataset, test_dataset = load_latent(data_dir)
 
-    elif dataset_name == 'Feature':
-        train_dataset, test_dataset = load_latent_feature(data_dir)
+    elif dataset_name == 'Latent_Pixel':
+        train_dataset, test_dataset = load_latent_pixel(data_dir)
         
     elif dataset_name == 'LSUN':
         train_dataset, test_dataset = load_lsun(data_dir, image_size, random_crop, random_flip,)

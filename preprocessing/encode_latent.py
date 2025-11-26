@@ -19,8 +19,10 @@ PngImagePlugin.MAX_TEXT_MEMORY = 128 * (2 ** 20)  # 128MB
 '''
 ImageNet.h5
 ├── train_latents  # Shape: (num_train_samples, latent_dim)
+├── train_pixels  # Shape: (num_train_samples, pixel_dim)
 ├── train_labels   # Shape: (num_train_samples,)
 ├── val_latents    # Shape: (num_val_samples, latent_dim)
+├── val_pixels    # Shape: (num_val_samples, pixel_dim)
 └── val_labels     # Shape: (num_val_samples,)
 '''
 
@@ -97,21 +99,28 @@ def compress_batch(images, device, vae):
         latents = torch.cat([latent_dist.mean, latent_dist.std], dim=1)
     return latents
 
-def save_compressed_latents(data_loader, f, dataset_name, device, vae):
+def save_compressed_latents(data_loader, f, dataset_name, device, vae, save_pixels):
     latents_dataset = None  
     labels_dataset = None
+    pixels_dataset = None 
     
     for batch_idx, (images, labels) in tqdm(enumerate(data_loader), total=len(data_loader), desc=f"Compressing {dataset_name}"):
         latents = compress_batch(images, device, vae)
         
         if latents_dataset is None:
             num_latents = len(data_loader.dataset)
-            latents_shape = latents.shape[1:]  # e.g., (D,)
+            latents_shape = latents.shape[1:]  # (C, H, W)
+            pixels_shape = images.shape[1:]          # (C, H, W)
             
             latents_dataset = f.create_dataset(
                 f'{dataset_name}_latents', (num_latents, *latents_shape), dtype='float32'
             )
 
+            if save_pixels:
+                pixels_dataset = f.create_dataset(
+                    f"{dataset_name}_pixels", (num_latents, *pixels_shape), dtype="float32",  
+                )
+                
             labels_dataset = f.create_dataset(
                 f'{dataset_name}_labels', (num_latents,), dtype='int64'  
             )
@@ -120,7 +129,10 @@ def save_compressed_latents(data_loader, f, dataset_name, device, vae):
         end_idx = start_idx + latents.size(0)
         
         latents_dataset[start_idx:end_idx] = latents.cpu().numpy()
+        if save_pixels:
+            pixels_dataset[start_idx:end_idx] = images.cpu().numpy()        
         labels_dataset[start_idx:end_idx] = labels.cpu().numpy()
+                    
         f.flush()
 
 if __name__ == "__main__":
@@ -130,6 +142,7 @@ if __name__ == "__main__":
     parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for processing images")
     parser.add_argument("--image_size", type=int, default=256, help="Image size for processing")
+    parser.add_argument("--save_pixels", type=bool, default=True, help="Also save downsampled pixels into HDF5.")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -143,6 +156,5 @@ if __name__ == "__main__":
     # Save compressed latents and labels to HDF5
     h5_file = os.path.join(args.output, "ImageNet.h5")
     with h5py.File(h5_file, 'w') as f:
-        save_compressed_latents(train_loader, f, "train", device, vae)
-        save_compressed_latents(val_loader, f, "val", device, vae)
-
+        save_compressed_latents(train_loader, f, "train", device, vae, args.save_pixels)
+        save_compressed_latents(val_loader, f, "val", device, vae, args.save_pixels)
