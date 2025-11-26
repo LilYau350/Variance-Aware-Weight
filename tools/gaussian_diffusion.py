@@ -823,11 +823,6 @@ class GaussianDiffusion:
         mse_loss_weight = None
         alpha = _extract_into_tensor(self.sqrt_alphas_cumprod, t, t.shape)
         sigma = _extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, t.shape)
-        snr = (alpha ** 2) / (sigma ** 2)
-        # velocity = (alpha[:, None, None, None] * x_t - x_start) / sigma[:, None, None, None]
-        
-        # unravel = alpha[:, None, None, None] * x_start - sigma[:, None, None, None] * noise  # u = \sqrt{\bar{alpha}_t} * x_0 - \sqrt{1-\bar{alpha}_t} * \epsilon
-        # unravel = sigma[:, None, None, None] * noise - alpha[:, None, None, None] * x_start # u= \sqrt{1-\bar{alpha}_t}epsilon - \sqrt{\bar{alpha}_t}x_0
         
         mse_loss_weight = compute_mse_loss_weight(self.model_mean_type, self.mse_loss_weight_type, t, alpha, sigma, self.p2_k, self.p2_gamma)
         
