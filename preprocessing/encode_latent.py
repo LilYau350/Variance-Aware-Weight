@@ -11,7 +11,6 @@ import h5py
 from PIL import Image, PngImagePlugin, ImageFile
 import math
 import random
-from tools.encoders import load_encoders
 
 Image.MAX_IMAGE_PIXELS = None
 PngImagePlugin.MAX_TEXT_CHUNK = 1024 * (2 ** 20)  # 1024MB
@@ -146,3 +145,4 @@ if __name__ == "__main__":
     with h5py.File(h5_file, 'w') as f:
         save_compressed_latents(train_loader, f, "train", device, vae)
         save_compressed_latents(val_loader, f, "val", device, vae)
+
