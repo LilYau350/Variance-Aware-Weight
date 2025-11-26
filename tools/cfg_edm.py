@@ -67,10 +67,12 @@ class Net(torch.nn.Module):
             else:
                 combined = x
 
-            # F_x = self.model((c_in * combined).to(dtype), c_noise.flatten().repeat(x.shape[0]).int(),
-            #                y=class_labels, **model_kwargs)
-            F_x, _ = self.model((c_in * combined).to(dtype), c_noise.flatten().repeat(x.shape[0]).int(),
+            raw_output = self.model((c_in * combined).to(dtype), c_noise.flatten().repeat(x.shape[0]).int(),
                            y=class_labels, **model_kwargs)
+            try:
+                F_x, _ = raw_output   
+            except Exception:
+                F_x = raw_output
             
             assert F_x.dtype == dtype
 
