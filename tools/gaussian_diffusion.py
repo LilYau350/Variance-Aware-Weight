@@ -842,11 +842,11 @@ class GaussianDiffusion:
             
             raw_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
 
-            try:
-                model_output, features_tilde = raw_output
-            except:
-                model_output =raw_output
-                features_tilde = None
+            if isinstance(raw_output, tuple):
+                model_output = raw_output[0]
+                features_tilde = raw_output[1] if len(raw_output) > 1 else None
+            else:
+                model_output = raw_output
             
             if self.model_var_type in [
                 ModelVarType.LEARNED,
@@ -1216,11 +1216,11 @@ class FlowMatching:
         
         raw_output = model(x_t, t, **model_kwargs)
 
-        try:
-            model_output, features_tilde = raw_output
-        except:
-            model_output =raw_output
-            features_tilde = None
+        if isinstance(raw_output, tuple):
+            model_output = raw_output[0]
+            features_tilde = raw_output[1] if len(raw_output) > 1 else None
+        else:
+            model_output = raw_output
         
         assert model_output.shape == target.shape == x_start.shape
 
@@ -1242,11 +1242,9 @@ class FlowMatching:
     #sampling
     def forward_with_cfg(self, model, x, t_in, guidance_scale, **model_kwargs):
         t = t_in.view(x.shape[0]) # make sure the shape fo t inputs mdoel is [batch_dim]
-        raw_output, _ = model(x, t, **model_kwargs)
-        try:
-            model_output, _ = raw_output
-        except:
-            model_output = raw_output
+        raw_output= model(x, t, **model_kwargs)
+        if isinstance(raw_output, tuple):
+            model_output = raw_output[0]
         guidance_scale = guidance_scale(t_in.mean().item()) if callable(guidance_scale) else guidance_scale
         if not self.float_equal(guidance_scale, 1.0):
             cond, uncond = th.split(model_output, len(model_output) // 2, dim=0)
