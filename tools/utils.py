@@ -10,7 +10,9 @@ import torch.distributed as dist
 from torchvision.utils import make_grid, save_image
 from tools import dist_util
 from tools.sampler import Sampler, Classifier
-
+from tools.trainer import sample_from_latent
+from tqdm import tqdm
+from contextlib import nullcontext
 
 def str2bool(v):
     if isinstance(v, bool):
@@ -55,8 +57,11 @@ def warmup_cosine_lr(step, warmup_steps, total_steps, lr, final_lr, cosine_decay
         
         
 def save_checkpoint(args, step, model, optimizer, ema_model=None):
+    model_name = args.model
+    if "DiT" in model_name and args.model_mode == 'flow':
+        model_name = 'SiT' + model_name[3:]
     if dist_util.is_main_process():
-        checkpoint_dir = os.path.join('checkpoint', args.dataset, args.model)
+        checkpoint_dir = os.path.join('checkpoint', args.dataset, model_name)
         os.makedirs(checkpoint_dir, exist_ok=True)
         state = {
             'model': model.state_dict(),
@@ -80,7 +85,7 @@ def load_checkpoint(ckpt_path, model=None, optimizer=None, ema_model=None):
     if dist_util.is_main_process():
         print('==> Resuming from checkpoint..')
     assert os.path.exists(ckpt_path), 'Error: checkpoint {} not found'.format(ckpt_path)
-    checkpoint = torch.load(ckpt_path)
+    checkpoint = torch.load(ckpt_path, map_location="cpu")
     if model:
         model.load_state_dict(checkpoint['model'])
     if optimizer:
@@ -120,20 +125,20 @@ def save_images(args, step, samples, labels, save_grid=False):
             os.makedirs(sample_dir, exist_ok=True)
             path = os.path.join(sample_dir, f'{step}.png')
             save_image(grid, path)
-        else:
-            # Save for evaluation purposes
-            sample_dir = os.path.join(args.logdir, args.dataset, 'generate_sample', args.mean_type)
-            os.makedirs(sample_dir, exist_ok=True)
-            shape_str = "x".join([str(x) for x in arr.shape[1:3]])
-            p = f"_{args.p}" if args.beta_schedule == "power" else ''
-            out_path = os.path.join(sample_dir, f"{args.dataset}_{shape_str}_{args.model}_{args.weight_type}_{args.beta_schedule}{p}_samples.npz")
+        # else:
+        #     # Save for evaluation purposes
+        #     sample_dir = os.path.join(args.logdir, args.dataset, 'generate_sample', args.mean_type)
+        #     os.makedirs(sample_dir, exist_ok=True)
+        #     shape_str = "x".join([str(x) for x in arr.shape[1:3]])
+        #     p = f"_{args.p}" if args.beta_schedule == "power" else ''
+        #     out_path = os.path.join(sample_dir, f"{args.dataset}_{shape_str}_{args.model}_{args.weight_type}_{args.beta_schedule}{p}_samples.npz")
             
-            if args.class_cond:
-                label_arr = np.concatenate(labels, axis=0)[: args.num_samples]
-                np.savez(out_path, arr, label_arr)
-            else:
-                np.savez(out_path, arr)
-            print(f"Evaluation samples saved at {out_path}")
+        #     if args.class_cond:
+        #         label_arr = np.concatenate(labels, axis=0)[: args.num_samples]
+        #         np.savez(out_path, arr, label_arr)
+        #     else:
+        #         np.savez(out_path, arr)
+        #     print(f"Evaluation samples saved at {out_path}")
 
         return arr  # Return the sampled images array for evaluation
         
@@ -161,23 +166,79 @@ def calculate_metrics(args, eval_model, **kwargs):
         return is_score, fid, sfid, pre, rec
     
     return None, None, None, None, None
+    
+@torch.no_grad()
+def _topk_correct(logits, target, ks=(1,5)):
+    num_classes = logits.size(1)
+    assert all(0 < k <= num_classes for k in ks), f"topk={ks} exceeds num_classes={num_classes}"
+    maxk = max(ks)
+    _, pred = logits.topk(maxk, dim=1, largest=True, sorted=True)  # [B, maxk]
+    pred = pred.t()                                                # [maxk, B]
+    correct = pred.eq(target.view(1, -1).expand_as(pred))          # [maxk, B] bool
+    return [correct[:k].reshape(-1).float().sum() for k in ks]
 
+@torch.no_grad()
+def eval_accuracy(args, val_loader, model, device, desc="ValDataset", topk=(1,5)):
+    model.eval()
+    total = torch.zeros(1, device=device)
+    correct = {k: torch.zeros(1, device=device) for k in topk}
+
+    pbar = tqdm(total=len(val_loader), desc=desc,
+                disable=not dist_util.is_main_process(),
+                dynamic_ncols=True, leave=False)
+
+    for images, labels in val_loader:
+        images, labels = images.to(device, non_blocking=True), labels.to(device, non_blocking=True)
+        if args.in_chans == 4:
+            images = sample_from_latent(images, args.latent_scale) 
+             
+        with torch.cuda.amp.autocast(enabled=args.amp):
+            t = torch.zeros(images.shape[0], dtype=torch.long, device=images.device) 
+            _, logits = model(images, t, labels)
+
+        corr_locals = _topk_correct(logits, labels, ks=topk)
+        n_local = torch.tensor(labels.size(0), device=device, dtype=torch.float32)
+
+        if dist.is_available() and dist.is_initialized():
+            corr_vec = torch.stack(corr_locals + [n_local], dim=0)
+            dist.all_reduce(corr_vec, op=dist.ReduceOp.SUM)
+            *corr_locals, n_local = corr_vec.unbind(0)
+
+        total += n_local
+        for k, c in zip(topk, corr_locals):
+            correct[k] += c
+
+        # if dist_util.is_main_process():
+        denom = max(total.item(), 1.0)
+        top1 = (correct.get(1, torch.tensor(0., device=device)).item() / denom) * 100
+        top5 = (correct.get(5, torch.tensor(0., device=device)).item() / denom) * 100
+        pbar.set_postfix_str(f"Top(1,5)=({top1:.2f},{top5:.2f})%")
+        pbar.update(1)
+
+    if dist_util.is_main_process():
+        pbar.close()
+        
+    return top1, top5
 
 def save_metrics_to_csv(args, eval_dir, metrics, step):
+    model_name = args.model
+    if "DiT" in model_name and args.model_mode == 'flow':
+        model_name = 'SiT' + model_name[3:]
     params = (
-        f"{args.dataset}_{args.model}_"
+        f"{args.model_mode}_{args.dataset}_{model_name}_"
         + (f"patch_{args.patch_size}_" if args.patch_size else "")
         + f"lr_{args.lr}_"  
         + f"betas_{args.betas}_"  
         + (f"lr_decay_{args.cosine_decay}_" if args.cosine_decay else "")        
         + f"dropout_{args.dropout}_"
         + f"drop_label_{args.drop_label_prob}_"
+        + f"target_{args.mean_type}_"
+        + f"beta_sched_{args.beta_schedule}_" + (f"{args.p}_" if args.beta_schedule == 'power' else "")        
+        + f"weight_{args.weight_type}_"  
+        + ("cond_" if args.class_cond else "")        
+        + f"sampler_{args.sampler_type}_"
         + f"sample_t_{args.sample_steps}_"
         + f"cfg_{args.guidance_scale}_"
-        + f"beta_sched_{args.beta_schedule}_" + (f"{args.p}_" if args.beta_schedule == 'power' else "")
-        + f"target_{args.mean_type}_"
-        + f"weight_{args.weight_type}_"  
-        + ("cond_" if args.class_cond else "")
         )
 
     params = re.sub(r'[^\w\-_\. ]', '_', params).rstrip('_')

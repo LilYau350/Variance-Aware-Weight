@@ -5,7 +5,7 @@ import torch
 from PIL import Image, PngImagePlugin, ImageFile
 import numpy as np
 import torchvision.transforms as transforms
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, SubsetRandomSampler
 import torchvision.datasets as datasets
 import torch.distributed as dist
 import h5py
@@ -15,7 +15,7 @@ Image.MAX_IMAGE_PIXELS = None
 PngImagePlugin.MAX_TEXT_CHUNK = 1024 * (2 ** 20)  # 1024MB
 PngImagePlugin.MAX_TEXT_MEMORY = 128 * (2 ** 20)  # 128MB
 
-    
+
 # Helper functions for cropping
 def center_crop_arr(pil_image, image_size):
     """
@@ -64,12 +64,10 @@ def random_crop_arr(pil_image, image_size, min_crop_frac=0.8, max_crop_frac=1.0)
 
 # Latent HDF5 Dataset
 class Latent(Dataset):
-    def __init__(self, h5_file, dataset_type="train", image_size=32):#, random_flip=True):
+    def __init__(self, h5_file, dataset_type="train"):
         super().__init__()
         self.h5_file = h5_file
         self.dataset_type = dataset_type
-        self.image_size = image_size
-        # self.random_flip = random_flip
 
         # Open the file to determine the length
         with h5py.File(self.h5_file, 'r') as f:
@@ -83,17 +81,34 @@ class Latent(Dataset):
             img = f[f'{self.dataset_type}_latents'][idx]
             label = f[f'{self.dataset_type}_labels'][idx]
 
-        # # Apply random flip
-        # if self.random_flip and random.random() < 0.5:
-        #     img = np.flip(img, axis=2)  # Flip horizontally across width axis
-
-        # Convert NumPy array to PyTorch tensor
-        # img = torch.tensor(img, dtype=torch.float32)
         img = torch.tensor(img.copy(), dtype=torch.float32)
 
         return img, label
 
+class LatentFeatureDataset(Dataset):
+    def __init__(self, h5_file, dataset_type="train"):
+        super().__init__()
+        self.h5_file = h5_file
+        self.dataset_type = dataset_type
 
+        # Open the file to determine the length
+        with h5py.File(self.h5_file, 'r') as f:
+            self.num_samples = len(f[f'{self.dataset_type}_latents'])
+
+    def __len__(self):
+        return self.num_samples
+
+    def __getitem__(self, idx):
+        with h5py.File(self.h5_file, 'r') as f:
+            img = f[f'{self.dataset_type}_latents'][idx]
+            feature = f[f'{self.dataset_type}_features'][idx]
+            label = f[f'{self.dataset_type}_labels'][idx]
+
+        img = torch.tensor(img.copy(), dtype=torch.float32)
+        feature = torch.tensor(feature.copy(), dtype=torch.float32)
+
+        return img, feature, label
+    
 # CIFAR10 Dataset
 def load_cifar10(data_dir, image_size, random_crop, random_flip,):
     
@@ -153,11 +168,17 @@ def load_imagenet(data_dir, image_size, random_crop, random_flip,):
     return train_dataset, val_dataset
 
 # HDF5Latent Loader
-def load_latent(data_dir, image_size):#, random_flip):
+def load_latent(data_dir):
     h5_file = os.path.join(data_dir)
-    train_dataset = Latent(h5_file=h5_file, dataset_type='train', image_size=image_size)#, random_flip=random_flip)
-    val_dataset = Latent(h5_file=h5_file, dataset_type='val', image_size=image_size)#, random_flip=random_flip)
+    train_dataset = Latent(h5_file=h5_file, dataset_type='train', )
+    val_dataset = Latent(h5_file=h5_file, dataset_type='val')
     
+    return train_dataset, val_dataset
+
+def load_latent_feature(data_dir):
+    h5_file = os.path.join(data_dir)
+    train_dataset = LatentFeatureDataset(h5_file,dataset_type="train")
+    val_dataset = LatentFeatureDataset(h5_file, dataset_type="val")
     return train_dataset, val_dataset
 
 # LSUN Dataset Loader
@@ -189,15 +210,20 @@ def load_dataset(data_dir, dataset_name, batch_size=128, image_size=None, random
         train_dataset, test_dataset = load_imagenet(data_dir, image_size, random_crop, random_flip,)
         
     elif dataset_name == 'Latent':
-        train_dataset, test_dataset = load_latent(data_dir, image_size)#, random_flip)  
-            
+        train_dataset, test_dataset = load_latent(data_dir)#, random_flip)  
+
+    elif dataset_name == 'Feature':
+        train_dataset, test_dataset = load_latent_feature(data_dir)
+        
     elif dataset_name == 'LSUN':
         train_dataset, test_dataset = load_lsun(data_dir, image_size, random_crop, random_flip,)
         
     else:
         raise ValueError("Unsupported dataset")
-
+    
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, drop_last=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, drop_last=True)
 
     return train_loader, test_loader
+
+

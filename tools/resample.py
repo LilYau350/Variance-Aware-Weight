@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-
+import math
 import numpy as np
 import torch as th
 import torch.nn.functional as F
@@ -160,4 +160,5 @@ class LossSecondMomentResampler(LossAwareSampler):
 
     def _warmed_up(self):
         return (self._loss_counts == self.history_per_term).all()
+
 

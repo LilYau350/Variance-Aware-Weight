@@ -1,20 +1,17 @@
 import argparse
-import csv
 import os
-import re
 import copy
-import math
-import random
 import warnings
 import torch
-import numpy as np
 from tqdm import trange
 import torch.optim as optim
 import torch.distributed as dist
 from torch.utils.data import DistributedSampler
+from torch.utils.data import DataLoader, Subset, SubsetRandomSampler
 from torchvision.utils import make_grid, save_image
 from tools.utils import *
 from tools import dist_util, logger
+from tools.encoders import load_encoders
 from evaluations.evaluator import Evaluator
 import tensorflow.compat.v1 as tf  # type: ignore
 from tools.trainer import Trainer
@@ -48,7 +45,7 @@ def parse_args():
     parser.add_argument("--eval", default=True, type=str2bool, help="Load checkpoint and evaluate FID...")
 
     parser.add_argument("--data_dir", type=str, default='./data', help="Path to the dataset directory")
-    parser.add_argument("--dataset", type=str, default='CIFAR-10', choices=['CIFAR-10', 'Gaussian', 'CelebA', 'ImageNet', 'LSUN', 'Latent'], help="Dataset to train on")
+    parser.add_argument("--dataset", type=str, default='CIFAR-10', choices=['CIFAR-10', 'Gaussian', 'CelebA', 'ImageNet', 'LSUN', 'Latent', 'Feature'], help="Dataset to train on")
     parser.add_argument("--patch_size", type=int, default=None, help="Patch Size for ViT, DiT, U-ViT, type is int")
     parser.add_argument("--in_chans", type=int, default=3, help="Number of input channels for the model")
     parser.add_argument("--image_size", type=int, default=32, help="Image size")
@@ -63,7 +60,7 @@ def parse_args():
     # Flow matching
     parser.add_argument("--path_type", type=str, default='linear', choices=['linear', 'cosine'], help="Path type for flow matching")    
     parser.add_argument('--sampler_type', type=str, default='sde', choices=['sde', 'ode'], help='Type of flow matching sampler to use')   
-    # Discrete Diffusionsdasmnnbmmnb
+    # Discrete Diffusion
     parser.add_argument("--beta_schedule", type=str, default='cosine', help="Beta schedule type 'linear', 'cosine', 'laplace', and 'power'.")
     parser.add_argument("--p", type=float, default=2, help="power for power schedule.")
     parser.add_argument("--diffusion_steps", type=int, default=1000, help="Number of diffusion steps")
@@ -72,13 +69,16 @@ def parse_args():
     parser.add_argument("--var_type", type=str, default='FIXED_LARGE', choices=['FIXED_LARGE', 'FIXED_SMALL', 'LEARNED', 'LEARNED_RANGE'], help="Variance type")
     parser.add_argument("--loss_type", type=str, default='MSE', choices=['MSE', 'RESCALED_MSE', 'KL', 'RESCALED_KL'], help="Loss type")
     parser.add_argument("--weight_type", type=str, default='constant', help="'constant', 'lambda', 'min_snr_k','vmin_snr_k', 'max_snr_k' 'debias', where k is a positive integer.")
-    parser.add_argument("--gamma", type=float, default=0, help="Coefficient for loss regularization")
+    parser.add_argument("--gamma", type=float, default=0, help="Coefficient for loss regularization, e.g., projection loss")
     parser.add_argument("--p2_gamma", type=int, default=1, help="hyperparameter for P2 weight")
     parser.add_argument("--p2_k", type=int, default=1, help="hyperparameter for P2 weight")
-
+    
+    # parser.add_argument("--enc-type", type=str, default="dinov2-vit-b", help="Encoder specification, e.g. 'dinov2-vit-b' or comma-separated list")
+    parser.add_argument("--encoder-depth", type=int, default=0, help="How many encoder blocks from SiT to expose to z-projection")
+    # parser.add_argument("--proj-coeff", type=float, default=0.5, help="Loss weight for projection loss (proj_loss)")
 
     # Training
-    parser.add_argument("--num_workers", type=int, default=4, help="Number of workers for DataLoader")    
+    parser.add_argument("--num_workers", type=int, default=16, help="Number of workers for DataLoader")    
     parser.add_argument("--batch_size", type=int, default=128, help="Batch size for training")    
     parser.add_argument("--total_steps", type=int, default=400000, help="Total training steps") 
     parser.add_argument("--ema_decay", type=float, default=0.9999, help="EMA decay rate")        
@@ -120,7 +120,7 @@ def parse_args():
     # which version of latnet model to choose
     parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")
     # ode/sde solver
-    parser.add_argument("--solver", type=str, default='heun', choices=['ddim', 'heun', 'euler', 'dopri5'], help="Choose sampler 'ddim', 'euler' or 'heun'")
+    parser.add_argument("--solver", type=str, default='heun', help="Choose sampler 'ddim', 'euler' or 'heun', 'heun2', 'dopri5'")
     parser.add_argument("--atol", type=float, default=1e-6, help="Absolute tolerance")
     parser.add_argument("--rtol", type=float, default=1e-3, help="Relative tolerance")
     # edm sampler
@@ -162,28 +162,32 @@ def build_dataset(args):
         image_size = args.image_size or 32  # Assuming latent is 32x32x4
         train_loader, test_loader = load_dataset(
             args.data_dir, args.dataset, args.batch_size, image_size, num_workers=args.num_workers, shuffle=not args.parallel)
+    elif args.dataset == 'Feature':
+        image_size = args.image_size or 32  # Assuming latent is 32x32x4
+        train_loader, test_loader = load_dataset(
+            args.data_dir, args.dataset, args.batch_size, image_size, num_workers=args.num_workers, shuffle=not args.parallel)
+        
     else:
         raise ValueError(f"Unsupported dataset: {args.dataset}")
-    
+
     if args.parallel:
-        world_size = dist.get_world_size()
-        rank = dist.get_rank()
+        world_size, rank = dist.get_world_size(), dist.get_rank()
+        per_gpu_batch_size = max(1, args.batch_size // world_size)
 
-        per_gpu_batch_size = args.batch_size // world_size
+        def wrap(dataset, shuffle, drop):
+            return torch.utils.data.DataLoader(
+                dataset, batch_size=per_gpu_batch_size,
+                sampler=DistributedSampler(dataset, num_replicas=world_size, rank=rank,
+                                                            shuffle=shuffle, drop_last=drop),
+                num_workers=args.num_workers, pin_memory=True,
+                drop_last=drop, persistent_workers=(args.num_workers > 0),
+            )
 
-        train_sampler = DistributedSampler(train_loader.dataset, num_replicas=world_size, rank=rank)
+        train_loader = wrap(train_loader.dataset, True,  True)
+        test_loader  = wrap(test_loader.dataset,  False, False)
 
-        train_loader = torch.utils.data.DataLoader(
-            train_loader.dataset, 
-            batch_size=per_gpu_batch_size,  
-            sampler=train_sampler,          
-            num_workers=args.num_workers,
-            drop_last=True,
-        )
-        
-    return train_loader, test_loader
-
-
+    return train_loader, test_loader     
+    
 def build_model(args):
     unet_models = {
         "UNet-32": UNet_32,"ADM-32": ADM_32, "ADM-64": ADM_64, "ADM-128": ADM_128, 
@@ -219,13 +223,13 @@ def build_model(args):
     elif "DiT" in args.model:
         model = model_dict[args.model](image_size=args.image_size, patch_size=args.patch_size,
                                        in_channels=args.in_chans, num_classes=args.num_classes,
-                                       learn_sigma=args.learn_sigma,
+                                       learn_sigma=args.learn_sigma, encoder_depth=args.encoder_depth,
                                        class_dropout_prob=args.drop_label_prob)
     
     return model
 
 
-def build_diffusion(args, use_ddim=False):
+def build_diffusion(args, device, use_ddim=False):
     if args.model_mode == "diffusion":
         betas = get_named_beta_schedule(args.beta_schedule, args.diffusion_steps, args.p)
         timestep_respacing = (
@@ -241,6 +245,7 @@ def build_diffusion(args, use_ddim=False):
             gamma=args.gamma,
             p2_gamma=args.p2_gamma,
             p2_k=args.p2_k,
+            device=device,
         )
         if use_ddim:
             return SpacedDiffusion(
@@ -260,38 +265,42 @@ def build_diffusion(args, use_ddim=False):
             p2_k=args.p2_k,
             atol = args.atol,
             rtol = args.rtol,
+            gamma=args.gamma,
+            device=device,
         )
         return FlowMatching(**flow_kwargs)
     
     else:
-        raise ValueError(f"Unsupported model_mode: {args.model_mode}")
-               
+        raise ValueError(f"Unsupported model_mode: {args.model_mode}")    
            
 def eval(args, **kwargs):
-    model, ema_model, eval_dir, step = (kwargs['model'], kwargs['ema_model'], kwargs['eval_dir'], kwargs['step'])
+    ema_model, eval_dir, val_loader, step = (kwargs['ema_model'], kwargs['eval_dir'], kwargs['val_loader'], kwargs['step'])
+         
     # Evaluate net_model and ema_model
-    # net_is_score, net_fid, net_sfid, net_pre, net_rec = calculate_metrics(args, model, **kwargs)
-    # if dist_util.is_main_process():
-    #     print(f"Model(NET): IS:{net_is_score:.2f}, FID:{net_fid:.2f}, sFID:{net_sfid:.2f}, Pre.:{net_pre:.2f}, Rec.:{net_rec:.2f}")
     ema_is_score, ema_fid, ema_sfid, ema_pre, ema_rec = calculate_metrics(args, ema_model, **kwargs)
     if dist_util.is_main_process():
         print(f"Model(EMA): IS:{ema_is_score:.2f}, FID:{ema_fid:.2f}, sFID:{ema_sfid:.2f}, Pre:{ema_pre:.2f}, Rec:{ema_rec:.2f}")
         
+    top1, top5 = None, None
+    # if args.num_classes >= 10:
+    #     top1, top5 = eval_accuracy(args, val_loader, ema_model, kwargs['device'], desc="Val-Dataset", topk=(1,5))   
+    #     if dist_util.is_main_process():
+    #         print(f"Model(EMA): Top-1:{top1:.2f}%, Top-5:{top5:.2f}%")      
+            
     metrics = {
-        # 'IS (Net)': net_is_score,
-        # 'FID (Net)': net_fid,
-        # 'sFID (Net)': net_sfid,        
-        # 'Precision (Net)': net_pre,
-        # 'Recall (Net)': net_rec,
         'IS (EMA)': ema_is_score,
         'FID (EMA)': ema_fid,
         'sFID (EMA)': ema_sfid,        
         'Pre. (EMA)': ema_pre,
         'Rec. (EMA)': ema_rec,
     }
+    if top1 is not None and top5 is not None:
+        metrics['Top-1 (EMA)'] = top1
+        metrics['Top-5 (EMA)'] = top5
+        
     if dist_util.is_main_process():
         save_metrics_to_csv(args, eval_dir, metrics, step)
-                
+
 def train(args, **kwargs):
     
     model, ema_model, checkpoint, diffusion, sample_diffusion, train_loader, optimizer, scheduler, device = (
@@ -344,10 +353,10 @@ def init(args):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
     set_random_seed(args, args.seed)
-    train_loader, _ = build_dataset(args)
+    train_loader, val_loader = build_dataset(args)
     
-    diffusion = build_diffusion(args, use_ddim=False)
-    sample_diffusion = build_diffusion(args, use_ddim=True)
+    diffusion = build_diffusion(args, device, use_ddim=False)
+    sample_diffusion = build_diffusion(args, device, use_ddim=True)
 
     
     if args.eval and not args.train:
@@ -363,7 +372,8 @@ def init(args):
         if args.parallel:
             model = DDP(model, device_ids=[local_rank], output_device=local_rank)
             ema_model = DDP(ema_model, device_ids=[local_rank], output_device=local_rank)
-
+            # model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True,)
+            # ema_model = DDP(ema_model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True,)
     if args.train:
         optimizer = optim.AdamW(model.parameters(), lr=args.lr, betas=args.betas, weight_decay=args.weight_decay, eps=args.eps)
         scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=get_lr_lambda(args))
@@ -405,7 +415,7 @@ def init(args):
         dist.barrier()
 
     return {
-        'device': device, 'train_loader': train_loader, 'model': model, 'ema_model': ema_model, 'checkpoint': checkpoint,
+        'device': device, 'train_loader': train_loader, 'val_loader': val_loader, 'model': model, 'ema_model': ema_model, 'checkpoint': checkpoint,
         'diffusion': diffusion, 'sample_diffusion': sample_diffusion, 'optimizer': optimizer, 'scheduler': scheduler,'evaluator': evaluator, 
         'ref_acts': ref_acts, 'ref_stats': ref_stats, 'ref_stats_spatial': ref_stats_spatial, 'eval_dir': eval_dir, 'step': step }
 

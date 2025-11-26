@@ -3,8 +3,7 @@ import torch.nn as nn
 from torch.cuda.amp import autocast, GradScaler
 from tools import dist_util, logger
 # from .resample import LossAwareSampler, UniformSampler, create_named_schedule_sampler
-import csv
-import os
+import os, h5py, numpy as np
 import torch.distributed as dist
 
 def ema(source, target, decay):
@@ -15,6 +14,12 @@ def ema(source, target, decay):
             target_dict[key].data.copy_(
                 target_dict[key].data * decay + source_dict[key].data * (1 - decay))
 
+def sample_from_latent(latent, latent_scale=1.):
+    mean, std = torch.chunk(latent, 2, dim=1)
+    latent_samples = mean + std * torch.randn_like(mean)
+    latent_samples = latent_samples * latent_scale 
+    return latent_samples 
+    
 class Trainer:
     def __init__(self, args, device, model, ema_model, optimizer, scheduler, diffusion, train_loader, start_step, pbar=None):
         self.args = args
@@ -30,29 +35,26 @@ class Trainer:
         self.scaler = GradScaler() if args.amp else None
         self.start_step = start_step        
         self.pbar = pbar
-
+    
     def _get_next_batch(self):
         try:
-            images, labels = next(self.datalooper)
+            if self.args.dataset == 'Feature':
+                # For Feature dataset, return latents, features, labels
+                images, features, labels = next(self.datalooper)
+                return images.to(self.device), features.to(self.device), labels.to(self.device)
+            else:
+                # For other datasets, return images, labels
+                images, labels = next(self.datalooper)
+                return images.to(self.device), labels.to(self.device) if self.args.class_cond else None
         except StopIteration:
             self.datalooper = iter(self.train_loader)
-            images, labels = next(self.datalooper)
-        return images.to(self.device), labels.to(self.device) if self.args.class_cond else None
+            return self._get_next_batch()
             
-    def _compute_loss(self, images, labels, step):
+    def _compute_loss(self, images, labels, features, step):
         model_kwargs = {"y": labels} if self.args.class_cond else {}
-        t= None
-        # t, weights = self.schedule_sampler.sample(images.shape[0], device=self.device)
-        # t = torch.full((images.shape[0],), step % 1000, device=images.device)
-
-        loss_dict = self.diffusion.training_losses(self.model, images, t=t, model_kwargs=model_kwargs)
-
-        # # Update sampler with local losses if using LossAwareSampler
-        # if isinstance(self.schedule_sampler, LossAwareSampler):
-        #     self.schedule_sampler.update_with_local_losses(t, loss_dict["loss"].detach())
-            
+        loss_dict = self.diffusion.training_losses(self.model, images, features, model_kwargs=model_kwargs)   
         return (loss_dict["loss"]).mean()
-
+    
     def _apply_gradient_clipping(self):
         if self.args.grad_clip:
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.grad_clip)
@@ -61,12 +63,6 @@ class Trainer:
         if dist_util.is_main_process():
             ema(self.model, self.ema_model, self.args.ema_decay)
                    
-    def _sample_from_latent(self, latent, latent_scale=1.):
-        mean, std = torch.chunk(latent, 2, dim=1)
-        latent_samples = mean + std * torch.randn_like(mean)
-        latent_samples = latent_samples * latent_scale 
-        return latent_samples 
-
     def train_step(self, step):
         self.model.train()
         if self.args.parallel:
@@ -76,18 +72,22 @@ class Trainer:
         loss_accumulated = 0.0
 
         for accumulation_step in range(grad_accumulation):
-            images, labels = self._get_next_batch()
+            features = None 
+            if self.args.dataset == 'Feature':
+                images, features, labels  = self._get_next_batch()
+            else:
+                images, labels = self._get_next_batch()
             
             if self.args.in_chans == 4:
-                images = self._sample_from_latent(images, self.args.latent_scale)  
+                images = sample_from_latent(images, self.args.latent_scale)  
                 
             if self.args.amp:
                 with autocast():
                 # with autocast(dtype=torch.bfloat16):
-                    loss = self._compute_loss(images, labels, step) / grad_accumulation  # Scale loss for accumulation
+                    loss = self._compute_loss(images, labels, features, step) / grad_accumulation  # Scale loss for accumulation
                 self.scaler.scale(loss).backward()
             else:
-                loss = self._compute_loss(images, labels, step) / grad_accumulation  # Scale loss for accumulation
+                loss = self._compute_loss(images, labels, features, step) / grad_accumulation  # Scale loss for accumulation
                 loss.backward()
                 
             loss_accumulated += loss.item()

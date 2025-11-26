@@ -17,41 +17,6 @@ import torch.distributed as dist
 
 SETUP_RETRY_COUNT = 3
 
-
-# def setup_dist():
-#     """
-#     Setup a distributed process group.
-#     """
-#     if dist.is_initialized():
-#         return
-    
-#     visible_devices = os.getenv("CUDA_VISIBLE_DEVICES", "")
-#     GPUS_PER_NODE = len(visible_devices.split(",")) if visible_devices else th.cuda.device_count()
-
-#     local_rank = int(os.getenv('LOCAL_RANK', 0))
-
-#     if not visible_devices:
-#         os.environ["CUDA_VISIBLE_DEVICES"] = f"{MPI.COMM_WORLD.Get_rank() % GPUS_PER_NODE}"
-    
-#     th.cuda.set_device(local_rank)
-    
-#     comm = MPI.COMM_WORLD
-#     backend = "gloo" if not th.cuda.is_available() else "nccl"
-
-#     if backend == "gloo":
-#         hostname = "localhost"
-#     else:
-#         hostname = socket.gethostbyname(socket.getfqdn())
-        
-#     os.environ["MASTER_ADDR"] = comm.bcast(hostname, root=0)
-#     os.environ["RANK"] = str(comm.rank)
-#     os.environ["WORLD_SIZE"] = str(comm.size)
-
-#     port = comm.bcast(_find_free_port(), root=0)
-#     os.environ["MASTER_PORT"] = str(port)
-    
-#     dist.init_process_group(backend=backend, init_method="env://")
-
 def is_main_process():
     """Helper function to check if the current process is the main one."""
     # If the distributed environment is not initialised, it returns True, because in single card mode, 

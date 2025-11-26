@@ -15,32 +15,7 @@ from tools.nn import mean_flat
 from tools.losses import normal_kl, discretized_gaussian_log_likelihood
 from tools import logger
 import torch.nn.functional as F
-
-class RFFCosineReg:
-    def __init__(self, input_dim, rff_dim=512, sigma=1.0, device='cuda'):
-        self.W = th.randn(rff_dim, input_dim, device=device) / sigma
-        self.b = 2 * math.pi * th.rand(rff_dim, device=device)
-
-    def regularization(self, pred, target):
-        """
-        pred: [B, D] predicted output
-        target: [B, D] ground truth
-
-        returns: [B] cosine similarity between RFF(pred) and RFF(target)
-        """
-        # Random Fourier Features mapping
-        def rff(x):
-            # x: [B, D]
-            return th.cos(x @ self.W.T + self.b)  # -> [B, rff_dim]
-
-        pred_feat = rff(pred)
-        target_feat = rff(target)
-
-        # Cosine similarity for each sample
-        cos_sim = F.cosine_similarity(pred_feat, target_feat, dim=1)  # [B]
-
-        return cos_sim
-
+from classifier.feature_extractor import FeatureExtractor 
 
 def get_named_beta_schedule(schedule_name, num_diffusion_timesteps, power):
     """
@@ -74,18 +49,18 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps, power):
         beta_t = beta_start + (beta_end - beta_start) * ((t) / (num_diffusion_timesteps)) ** power
         return beta_t
 
-    elif schedule_name == "laplace":
-        t = np.arange(1, num_diffusion_timesteps + 1)
-        t_normalized = th.tensor((t - 1) / (num_diffusion_timesteps - 1), dtype=th.float64)
-        mu, b = 0.0, 0.5
-        log_term = 1 - 2 * th.abs(0.5 - t_normalized)
-        lmb = mu - b * th.sign(0.5 - t_normalized) * th.log(log_term)
-        snr = th.exp(lmb)        
-        alpha_t = th.sqrt(1 / (1 + 1/snr))  # sqrt(bar_alpha_t)
-        bar_alpha_t = alpha_t ** 2
-        alpha_t_single = th.cat([bar_alpha_t[:1], bar_alpha_t[1:] / (bar_alpha_t[:-1])])
-        beta_t = 1 - alpha_t_single
-        return beta_t.numpy() 
+    # elif schedule_name == "laplace":
+    #     t = np.arange(1, num_diffusion_timesteps + 1)
+    #     t_normalized = th.tensor((t - 1) / (num_diffusion_timesteps - 1), dtype=th.float64)
+    #     mu, b = 0.0, 0.5
+    #     log_term = 1 - 2 * th.abs(0.5 - t_normalized)
+    #     lmb = mu - b * th.sign(0.5 - t_normalized) * th.log(log_term)
+    #     snr = th.exp(lmb)        
+    #     alpha_t = th.sqrt(1 / (1 + 1/snr))  # sqrt(bar_alpha_t)
+    #     bar_alpha_t = alpha_t ** 2
+    #     alpha_t_single = th.cat([bar_alpha_t[:1], bar_alpha_t[1:] / (bar_alpha_t[:-1])])
+    #     beta_t = 1 - alpha_t_single
+    #     return beta_t.numpy() 
         
     else:
         raise NotImplementedError(f"unknown beta schedule: {schedule_name}")
@@ -178,7 +153,9 @@ class GaussianDiffusion:
         gamma,
         p2_gamma=1,
         p2_k=1,
+        device="cuda",
     ):
+
         self.model_mean_type = model_mean_type
         self.model_var_type = model_var_type
         self.loss_type = loss_type
@@ -189,6 +166,9 @@ class GaussianDiffusion:
         # P2 weighting
         self.p2_gamma = p2_gamma
         self.p2_k = p2_k
+                
+        # if self.gamma > 0:
+        #     self.feature_extractor = FeatureExtractor(device=device)
         
         # Use float64 for accuracy.
         betas = np.array(betas, dtype=np.float64)
@@ -832,7 +812,7 @@ class GaussianDiffusion:
         return {"output": output, "pred_xstart": out["pred_xstart"]}
 
 
-    def training_losses(self, model, x_start, t=None, model_kwargs=None, noise=None):
+    def training_losses(self, model, x_start, features=None, t=None, model_kwargs=None, noise=None):
         """
         Compute training losses for a single timestep.
 
@@ -859,14 +839,14 @@ class GaussianDiffusion:
         mse_loss_weight = None
         alpha = _extract_into_tensor(self.sqrt_alphas_cumprod, t, t.shape)
         sigma = _extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, t.shape)
-        
+        snr = (alpha ** 2) / (sigma ** 2)
         # velocity = (alpha[:, None, None, None] * x_t - x_start) / sigma[:, None, None, None]
         
         # unravel = alpha[:, None, None, None] * x_start - sigma[:, None, None, None] * noise  # u = \sqrt{\bar{alpha}_t} * x_0 - \sqrt{1-\bar{alpha}_t} * \epsilon
         # unravel = sigma[:, None, None, None] * noise - alpha[:, None, None, None] * x_start # u= \sqrt{1-\bar{alpha}_t}epsilon - \sqrt{\bar{alpha}_t}x_0
         
         mse_loss_weight = compute_mse_loss_weight(self.model_mean_type, self.mse_loss_weight_type, t, alpha, sigma, self.p2_k, self.p2_gamma)
-                
+        
         if self.loss_type == LossType.KL or self.loss_type == LossType.RESCALED_KL:
             terms["loss"] = self._vb_terms_bpd(
                 model=model,
@@ -881,8 +861,11 @@ class GaussianDiffusion:
                 
         elif self.loss_type == LossType.MSE or self.loss_type == LossType.RESCALED_MSE:
             
-            model_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
-
+            model_output, features_tilde = model(x_t, self._scale_timesteps(t), **model_kwargs)
+            
+            # model_output, features_tilde, cls_tok = model(x_t, self._scale_timesteps(t), **model_kwargs)
+            # model_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
+            
             if self.model_var_type in [
                 ModelVarType.LEARNED,
                 ModelVarType.LEARNED_RANGE,
@@ -922,14 +905,13 @@ class GaussianDiffusion:
             terms["mse"] = mse_loss_weight * raw_mse
 
             if self.gamma > 0:
-                # Initialize RFFCosineReg if not already
-                if self.rff_reg is None:
-                    C, H, W = x_start.shape[1:]  # (N, C, H, W)
-                    self.rff_reg = RFFCosineReg(input_shape=(C, H, W), rff_dim=512, sigma=1.0, device=x_start.device)
-                
-                regularization = 1 - self.rff_reg.regularization(model_output, target)  # 1 - cosine similarity
-                terms["reg"] = self.gamma * regularization  # [B] 
-                
+                # clf_feats = self.feature_extractor(x_start)
+                proj_loss = projection_loss(features, features_tilde)
+                terms["reg"] = self.gamma * proj_loss                
+                # ce_loss = self.classification_loss(features_tilde, model_kwargs['y'], snr)
+                # ce_loss = self.classification_loss(raw_mse)
+                # terms["reg"] = self.gamma * ce_loss
+                                
             if "vb" in terms:
                 terms["loss"] = terms["mse"] + terms["vb"]
             elif self.gamma > 0:
@@ -941,15 +923,29 @@ class GaussianDiffusion:
 
         return terms
     
-    
+
     # def regularization(self, model_output):
     #     batch_size = model_output.size(0)  
     #     flattened_output = model_output.view(batch_size, -1)  
-    #     normalized_output = flattened_output / th.norm(flattened_output, p=2, dim=1, keepdim=True)
+    #     normalized_output = F.normalize(flattened_output, p=2, dim=1, eps=1e-3) 
+    #     # normalized_output = flattened_output / th.norm(flattened_output, p=2, dim=1, keepdim=True)
     #     cosine_similarity_matrix = th.mm(normalized_output, normalized_output.T)  
     #     avg_cosine_similarity = th.sum(cosine_similarity_matrix) / (batch_size ** 2)
     #     return - avg_cosine_similarity
     
+    # def classification_loss(self, raw_mse):
+    #     prob = 1 - th.exp(-raw_mse) / th.sum(th.exp(-raw_mse))
+    #     return prob
+    
+    # def classification_loss(self, logits, labels, snr):
+    #     ce_loss = F.cross_entropy(logits, labels, reduction="none")   # (N,)
+    #     weight = snr / (snr + 1.0)     # (N,) in [0,1)
+    #     # ce_loss = ce_loss.mean()
+    #     ce_loss = (weight * ce_loss).mean()
+    #     # ce_loss = (weight * (snr >= 0.5) * ce_loss).mean()
+    #     return ce_loss
+        
+        
     def _prior_bpd(self, x_start):
         """
         Get the prior KL term for the variational lower-bound, measured in
@@ -1025,6 +1021,15 @@ class GaussianDiffusion:
             "mse": mse,
         }
 
+def projection_loss(z, z_tilde):
+    z = F.normalize(z, dim=-1)
+    z_tilde = F.normalize(z_tilde, dim=-1)
+    proj_loss = -th.mean(th.sum(z * z_tilde, dim=-1))
+    return proj_loss
+
+def cosine_similarity(target, output):
+    cosine_sim = F.cosine_similarity(target, output, dim=-1)
+    return -cosine_sim.mean()
 
 def _extract_into_tensor(arr, timesteps, broadcast_shape):
     """
@@ -1099,13 +1104,17 @@ def compute_mse_loss_weight(model_mean_type, mse_loss_weight_type, t, alpha, sig
             mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).max(dim=1)[0]
         elif mse_loss_weight_type == 'lambda':
             mse_loss_weight = alpha
+            
+    elif model_mean_type.name == "VECTOR":
+        if mse_loss_weight_type == 'lambda':
+            mse_loss_weight = (sigma - alpha) ** 2 / (alpha**2 + sigma**2)
 
     elif model_mean_type.name == "VELOCITY":
         if mse_loss_weight_type.startswith("min_snr_"):
             k = float(mse_loss_weight_type.split('min_snr_')[-1])
             mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).min(dim=1)[0] / (snr + 1)
         elif mse_loss_weight_type == 'lambda':
-            mse_loss_weight = 2 * alpha * sigma
+            mse_loss_weight = (alpha * sigma)**2 / (alpha**2 + sigma **2)  # 2 * alpha * sigma
 
     if mse_loss_weight is None:
         raise ValueError(f"Invalid mse_loss_weight_type: {mse_loss_weight_type}")
@@ -1113,7 +1122,7 @@ def compute_mse_loss_weight(model_mean_type, mse_loss_weight_type, t, alpha, sig
     mse_loss_weight[snr == 0] = 1.0  # Handle edge cases
     return mse_loss_weight
 
-
+            
 class FlowMatching:
     def __init__(
         self,
@@ -1126,6 +1135,8 @@ class FlowMatching:
         p2_k=1,
         atol=1e-6,
         rtol=1e-5,
+        gamma,        
+        device="cuda",
     ):
         self.path_type = path_type        
         self.model_mean_type = model_mean_type
@@ -1138,6 +1149,10 @@ class FlowMatching:
         self.atol = atol
         self.rtol = rtol
         
+        self.gamma = gamma  
+        # if self.gamma > 0:
+        #     self.feature_extractor = FeatureExtractor(device=device)
+            
     def expand_t_like_x(self, t, x):
         if t.dim() == 0:
             t = t.expand(x.shape[0])
@@ -1208,6 +1223,7 @@ class FlowMatching:
             # start_x = (sigma_t * model_output - d_sigma_t * x_t) / (sigma_t * d_alpha_t - alpha_t * d_sigma_t)
             noise = (d_alpha_t * x_t - alpha_t * model_output) / (sigma_t * d_alpha_t - alpha_t * d_sigma_t)
             score = -noise / sigma_t
+            
         elif self.model_mean_type == ModelMeanType.SCORE:
             return model_output
         
@@ -1223,7 +1239,7 @@ class FlowMatching:
         return x_t
     
     #taining
-    def training_losses(self, model, x_start, t=None, model_kwargs=None, noise=None):
+    def training_losses(self, model, x_start, features=None, t=None, model_kwargs=None, noise=None):
         if model_kwargs is None:
             model_kwargs = {}
         if noise is None:
@@ -1248,20 +1264,29 @@ class FlowMatching:
             # ModelMeanType.UNRAVEL: unravel,
         }[self.model_mean_type]
         
-        model_output = model(x_t, t, **model_kwargs)
+        model_output, features_tilde = model(x_t, t, **model_kwargs)
         
         assert model_output.shape == target.shape == x_start.shape
 
         raw_mse = mean_flat((target - model_output) ** 2)
             
-        terms["loss"] = mse_loss_weight * raw_mse
-
+        terms["mse"] = mse_loss_weight * raw_mse
+        
+        if self.gamma > 0:
+            proj_loss = projection_loss(features, features_tilde)
+            terms["reg"] = self.gamma * proj_loss                
+    
+        if self.gamma > 0:
+                terms["loss"] = terms["mse"] + terms["reg"]
+        else:
+            terms["loss"] = terms["mse"]
+            
         return terms
 
     #sampling
     def forward_with_cfg(self, model, x, t_in, guidance_scale, **model_kwargs):
         t = t_in.view(x.shape[0]) # make sure the shape fo t inputs mdoel is [batch_dim]
-        model_output = model(x, t, **model_kwargs)
+        model_output, _ = model(x, t, **model_kwargs)
         guidance_scale = guidance_scale(t_in.mean().item()) if callable(guidance_scale) else guidance_scale
         if not self.float_equal(guidance_scale, 1.0):
             cond, uncond = th.split(model_output, len(model_output) // 2, dim=0)

@@ -11,6 +11,7 @@ import h5py
 from PIL import Image, PngImagePlugin, ImageFile
 import math
 import random
+from tools.encoders import load_encoders
 
 Image.MAX_IMAGE_PIXELS = None
 PngImagePlugin.MAX_TEXT_CHUNK = 1024 * (2 ** 20)  # 1024MB
@@ -111,7 +112,7 @@ def save_compressed_latents(data_loader, f, dataset_name, device, vae):
             latents_dataset = f.create_dataset(
                 f'{dataset_name}_latents', (num_latents, *latents_shape), dtype='float32'
             )
-            
+
             labels_dataset = f.create_dataset(
                 f'{dataset_name}_labels', (num_latents,), dtype='int64'  
             )
@@ -125,8 +126,8 @@ def save_compressed_latents(data_loader, f, dataset_name, device, vae):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Autoencoder Image Compression/Decompression")
-    parser.add_argument("--input", type=str, required=True, help="Input folder path or latent file")
-    parser.add_argument("--output", type=str, required=True, help="Output folder path")
+    parser.add_argument("--input", type=str, default="/data/ImageNet/LSVRC2012", help="Input folder path or latent file")
+    parser.add_argument("--output", type=str, default="/data/ImageNet", help="Output folder path")
     parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for processing images")
     parser.add_argument("--image_size", type=int, default=256, help="Image size for processing")

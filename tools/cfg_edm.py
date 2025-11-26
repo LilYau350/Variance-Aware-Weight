@@ -67,8 +67,11 @@ class Net(torch.nn.Module):
             else:
                 combined = x
 
-            F_x = self.model((c_in * combined).to(dtype), c_noise.flatten().repeat(x.shape[0]).int(),
+            # F_x = self.model((c_in * combined).to(dtype), c_noise.flatten().repeat(x.shape[0]).int(),
+            #                y=class_labels, **model_kwargs)
+            F_x, _ = self.model((c_in * combined).to(dtype), c_noise.flatten().repeat(x.shape[0]).int(),
                            y=class_labels, **model_kwargs)
+            
             assert F_x.dtype == dtype
 
             if self.pred_type == 'EPSILON':
@@ -89,17 +92,6 @@ class Net(torch.nn.Module):
                 c_out = -sigma * c_in  # -\sqrt{1 - \bar{\alpha}_t}
                 D_x = c_skip * x + c_out * F_x[:, :self.img_channels].to(torch.float32)
                 
-            # elif self.pred_type == 'UNRAVEL': 
-            #     F_x = self.apply(F_x, guidance_scale) 
-            #     c_skip = 1
-            #     c_out = 1 / c_in
-            #     D_x = (c_skip * x + c_out * F_x[:, :self.img_channels].to(torch.float32) )/ 2
-                
-            # elif self.pred_type == 'UNRAVEL':
-            #     F_x = self.apply(F_x, guidance_scale)
-            #     c_skip = 1
-            #     c_out = -1 / c_in
-            #     D_x = (c_skip * x + c_out * F_x[:, :self.img_channels].to(torch.float32) )/ 2
             else:
                 raise ValueError(f"Unsupported pred_type: {self.pred_type}")
 
@@ -130,15 +122,15 @@ class Net(torch.nn.Module):
             alphas_cumprod = np.cumprod(alphas, axis=0)
             return alphas_cumprod[self.M - j]
         
-        elif self.noise_schedule == 'laplace':
-            mu, b = 0.0, 0.5         
-            # t_normalized = (self.M - j + 1) / (self.M - 1)  
-            t_normalized = (self.M - j) / self.M
-            log_term = 1 - 2 * torch.abs(0.5 - t_normalized)
-            lmb = mu - b * torch.sign(0.5 - t_normalized) * torch.log(log_term)
-            snr = torch.exp(lmb)
-            alpha_bar = 1 / (1 + 1 / snr)
-            return alpha_bar
+        # elif self.noise_schedule == 'laplace':
+        #     mu, b = 0.0, 0.5         
+        #     # t_normalized = (self.M - j + 1) / (self.M - 1)  
+        #     t_normalized = (self.M - j) / self.M
+        #     log_term = 1 - 2 * torch.abs(0.5 - t_normalized)
+        #     lmb = mu - b * torch.sign(0.5 - t_normalized) * torch.log(log_term)
+        #     snr = torch.exp(lmb)
+        #     alpha_bar = 1 / (1 + 1 / snr)
+        #     return alpha_bar
         else:
             raise NotImplementedError(f"unknown beta schedule: {self.noise_schedule}")
 

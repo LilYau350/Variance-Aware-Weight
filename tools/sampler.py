@@ -7,7 +7,6 @@ from tools import dist_util
 from .cfg_edm import ablation_sampler, float_equal, Net
 from models.unet import EncoderUNetModel
 
-
 class Classifier:
     def __init__(self, args, device, model):
         self.args = args

@@ -10,20 +10,40 @@
 # --------------------------------------------------------
 
 import math
-
+import torch.nn.functional as F
 import numpy as np
 import torch
 import torch.nn as nn
 from timm.models.vision_transformer import Attention, Mlp, PatchEmbed
-#import warnings
+import warnings
+import torch.distributed as dist
 
-#warnings.filterwarnings("ignore", message=".*flash attention.*")
+warnings.filterwarnings("ignore", message=".*flash attention.*")
 
 
 def modulate(x, shift, scale):
-    return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
+    return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)    
+
+def mean_square_error(cls_token, c_emb):
+    mse_loss = F.mse_loss(cls_token, c_emb)
+    return mse_loss
+
+def cosine_similarity(cls_token, c_emb):
+    cosine_sim = F.cosine_similarity(cls_token, c_emb, dim=-1)
+    return -cosine_sim.mean()
 
 
+def build_mlp(hidden_size, projector_dim, z_dim):
+    return nn.Sequential(
+                nn.Linear(hidden_size, projector_dim),
+                nn.SiLU(),
+                nn.Linear(projector_dim, projector_dim),
+                nn.SiLU(),
+                nn.Linear(projector_dim, z_dim),
+            )
+
+
+    
 #################################################################################
 #               Embedding Layers for Timesteps and Class Labels                 #
 #################################################################################
@@ -113,9 +133,9 @@ class DiTBlock(nn.Module):
 
     def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, **block_kwargs):
         super().__init__()
-        self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-5)
+        self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.attn = Attention(hidden_size, num_heads=num_heads, qkv_bias=True, **block_kwargs)
-        self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-5)
+        self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
         approx_gelu = lambda: nn.GELU(approximate="tanh")
         self.mlp = Mlp(in_features=hidden_size, hidden_features=mlp_hidden_dim, act_layer=approx_gelu, drop=0)
@@ -135,16 +155,15 @@ class FinalLayer(nn.Module):
 
     def __init__(self, hidden_size, patch_size, out_channels):
         super().__init__()
-        self.norm_final = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-5)
+        self.norm_final = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.linear = nn.Linear(hidden_size, patch_size * patch_size * out_channels, bias=True)
         self.adaLN_modulation = nn.Sequential(nn.SiLU(), nn.Linear(hidden_size, 2 * hidden_size, bias=True))
 
     def forward(self, x, c):
         shift, scale = self.adaLN_modulation(c).chunk(2, dim=1)
         x = modulate(self.norm_final(x), shift, scale)
-        x = self.linear(x)
-        return x
-
+        x = self.linear(x)   
+        return x 
 
 class DiT(nn.Module):
     """
@@ -163,6 +182,10 @@ class DiT(nn.Module):
         class_dropout_prob=0.1,
         num_classes=1000,
         learn_sigma=False,
+        encoder_depth=8,
+        z_dims=768,
+        projector_dim=2048,
+         
     ):
         super().__init__()
         self.learn_sigma = learn_sigma
@@ -170,18 +193,30 @@ class DiT(nn.Module):
         self.out_channels = in_channels * 2 if learn_sigma else in_channels
         self.patch_size = patch_size
         self.num_heads = num_heads
-
+        
+        # self.z_dims = z_dims
+        self.encoder_depth = encoder_depth
+        self.align = self.encoder_depth > 0 
+        
         self.x_embedder = PatchEmbed(image_size, patch_size, in_channels, hidden_size, bias=True)
         self.t_embedder = TimestepEmbedder(hidden_size)
         self.y_embedder = LabelEmbedder(num_classes, hidden_size, class_dropout_prob)
         num_patches = self.x_embedder.num_patches
+        
+        self.cls_token = None
+        # self.cls_token = nn.Parameter(torch.randn(1, 1, hidden_size))    
+        self.use_cls_token = self.cls_token is not None     
+        self.extra_tokens = 1 if self.use_cls_token else 0
+        
         # Will use fixed sin-cos embedding:
-        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
+        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + self.extra_tokens, hidden_size), requires_grad=False)
 
         self.blocks = nn.ModuleList([DiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio) for _ in range(depth)])
+        self.projectors = build_mlp(hidden_size, projector_dim, z_dims) if self.align else None
         self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
+        
         self.initialize_weights()
-
+        
     def initialize_weights(self):
         # Initialize transformer layers:
         def _basic_init(module):
@@ -189,11 +224,11 @@ class DiT(nn.Module):
                 torch.nn.init.xavier_uniform_(module.weight)
                 if module.bias is not None:
                     nn.init.constant_(module.bias, 0)
-
         self.apply(_basic_init)
-
+        
         # Initialize (and freeze) pos_embed by sin-cos embedding:
-        pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches**0.5))
+        pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches**0.5), cls_token=self.use_cls_token, extra_tokens=self.extra_tokens)
+        
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
         # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
@@ -237,20 +272,36 @@ class DiT(nn.Module):
     def forward(self, x, t, y, **kwargs):
         """
         Forward pass of DiT.
-        x: (N, C, H, W) tensor of spatial inputs (images or latent representations of images)
-        t: (N,) tensor of diffusion timesteps
-        y: (N,) tensor of class labels
+        x: (N, C, H, W)
+        t: (N,)
+        y: (N,)
         """
-        x = self.x_embedder(x) + self.pos_embed  # (N, T, D), where T = H * W / patch_size ** 2
-        t = self.t_embedder(t)  # (N, D)
-        y = self.y_embedder(y, self.training)  # (N, D)
-        c = t + y  # (N, D)
-        for block in self.blocks:
-            x = block(x, c)  # (N, T, D)
-        x = self.final_layer(x, c)  # (N, T, patch_size ** 2 * out_channels)
-        x = self.unpatchify(x)  # (N, out_channels, H, W)
-        return x
+        x = self.x_embedder(x)  # (N, T, D)
+        N, T, D = x.shape
+        
+        if self.use_cls_token:
+            cls_token = self.cls_token.expand(N, 1, -1)   # (N,1,D)
+            x = torch.cat([cls_token, x], dim=1)          # (N, T+1, D)
+            
+        x = x + self.pos_embed    
+        
+        t_emb = self.t_embedder(t)                 # (N, D)
+        y_emb = self.y_embedder(y, self.training)  # (N, D)
+        c = t_emb + y_emb                      # (N, D)
 
+        zs = None
+        for i, block in enumerate(self.blocks):
+            x = block(x, c)  # (N, T, D)
+            if self.align and (i + 1) == self.encoder_depth:
+                # zs = x[:, self.extra_tokens:]
+                zs = self.projectors(x[:, self.extra_tokens:].reshape(-1, D)).reshape(N, T, -1)  # (N, T, z_dim)
+        
+        x = x[:, self.extra_tokens:]           # (N, T, D)
+        x = self.final_layer(x, c)             # (N, T, p^2 * out_channels)
+        x = self.unpatchify(x)                 # (N, out_channels, H, W)
+        
+        return x, zs
+                
     def forward_with_cfg(self, x, t, y, cfg_scale=1.0):
         """
         Forward pass of DiT, but also batches the unconditional forward pass for classifier-free guidance.
@@ -330,9 +381,9 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
 #                                   DiT Configs                                  #
 #################################################################################
 
-def DiT_S(image_size, patch_size, in_channels, class_dropout_prob, num_classes, learn_sigma, **kwargs):
+def DiT_S(image_size, patch_size, in_channels, class_dropout_prob, num_classes, learn_sigma,  **kwargs):
     return DiT(image_size=image_size, patch_size=patch_size, in_channels=in_channels, hidden_size=384, depth=12, num_heads=6, 
-               class_dropout_prob=class_dropout_prob, num_classes=num_classes, learn_sigma=learn_sigma, **kwargs)
+               class_dropout_prob=class_dropout_prob, num_classes=num_classes, learn_sigma=learn_sigma,  **kwargs)
 
 def DiT_B(image_size, patch_size, in_channels, class_dropout_prob, num_classes, learn_sigma, **kwargs):
     return DiT(image_size=image_size, patch_size=patch_size,  in_channels=in_channels, hidden_size=768, depth=12, num_heads=12, 
@@ -355,10 +406,11 @@ DiT_models = {
 
 
 if __name__ == '__main__':
-    vit_model = DiT_B(image_size=32, patch_size=4, num_classes=1000).cuda()
+    dit_model = DiT_B(image_size=32, patch_size=4, in_channels=4, class_dropout_prob=0.0, num_classes=1000, learn_sigma=False).cuda()
     x = torch.randn(8, 4, 32, 32).cuda()
     t = torch.randint(0, 1000, (8,)).cuda()
     c = torch.randint(0, 1000, (8,)).cuda()
-    y = vit_model(x, t, c)
+    y, z = dit_model(x, t, c)
 
     print(f'x.shape {x.shape}, y.shape {y.shape}')
+
