@@ -69,9 +69,9 @@ class Net(torch.nn.Module):
 
             raw_output = self.model((c_in * combined).to(dtype), c_noise.flatten().repeat(x.shape[0]).int(),
                            y=class_labels, **model_kwargs)
-            try:
-                F_x, _ = raw_output   
-            except Exception:
+            if isinstance(raw_output, tuple):
+                F_x = raw_output[0]
+            else:
                 F_x = raw_output
             
             assert F_x.dtype == dtype
