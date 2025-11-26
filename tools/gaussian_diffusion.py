@@ -840,10 +840,13 @@ class GaussianDiffusion:
                 
         elif self.loss_type == LossType.MSE or self.loss_type == LossType.RESCALED_MSE:
             
-            model_output, features_tilde = model(x_t, self._scale_timesteps(t), **model_kwargs)
-            
-            # model_output, features_tilde, cls_tok = model(x_t, self._scale_timesteps(t), **model_kwargs)
-            # model_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
+            raw_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
+
+            try:
+                model_output, features_tilde = raw_output
+            except:
+                model_output =raw_output
+                features_tilde = None
             
             if self.model_var_type in [
                 ModelVarType.LEARNED,
@@ -1209,10 +1212,15 @@ class FlowMatching:
             ModelMeanType.VELOCITY: alpha_t[:, None, None, None] * noise - sigma_t[:, None, None, None] * x_start,
             ModelMeanType.VECTOR: d_alpha_t[:, None, None, None] * x_start + d_sigma_t[:, None, None, None] * noise,
             ModelMeanType.SCORE: - noise / sigma_t[:, None, None, None],
-            # ModelMeanType.UNRAVEL: unravel,
         }[self.model_mean_type]
         
-        model_output, features_tilde = model(x_t, t, **model_kwargs)
+        raw_output = model(x_t, t, **model_kwargs)
+
+        try:
+            model_output, features_tilde = raw_output
+        except:
+            model_output =raw_output
+            features_tilde = None
         
         assert model_output.shape == target.shape == x_start.shape
 
@@ -1234,7 +1242,11 @@ class FlowMatching:
     #sampling
     def forward_with_cfg(self, model, x, t_in, guidance_scale, **model_kwargs):
         t = t_in.view(x.shape[0]) # make sure the shape fo t inputs mdoel is [batch_dim]
-        model_output, _ = model(x, t, **model_kwargs)
+        raw_output, _ = model(x, t, **model_kwargs)
+        try:
+            model_output, _ = raw_output
+        except:
+            model_output = raw_output
         guidance_scale = guidance_scale(t_in.mean().item()) if callable(guidance_scale) else guidance_scale
         if not self.float_equal(guidance_scale, 1.0):
             cond, uncond = th.split(model_output, len(model_output) // 2, dim=0)
