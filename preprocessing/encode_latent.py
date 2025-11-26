@@ -118,11 +118,11 @@ def save_compressed_latents(data_loader, f, dataset_name, device, vae, save_pixe
 
             if save_pixels:
                 pixels_dataset = f.create_dataset(
-                    f"{dataset_name}_pixels", (num_latents, *pixels_shape), dtype="float32",  
+                    f"{dataset_name}_pixels", (num_latents, *pixels_shape), dtype="uint8",  
                 )
                 
             labels_dataset = f.create_dataset(
-                f'{dataset_name}_labels', (num_latents,), dtype='int64'  
+                f'{dataset_name}_labels', (num_latents,), dtype='uint16'  
             )
         
         start_idx = batch_idx * data_loader.batch_size
@@ -130,9 +130,15 @@ def save_compressed_latents(data_loader, f, dataset_name, device, vae, save_pixe
         
         latents_dataset[start_idx:end_idx] = latents.cpu().numpy()
         if save_pixels:
-            pixels_dataset[start_idx:end_idx] = images.cpu().numpy()        
+            # Convert pixels from [-1, 1] to [0, 255] and store as uint8
+            pixel = images.cpu().numpy()  # Assuming images are already normalized to [-1,1]
+            pixel = np.clip((pixel + 1) * 127.5, 0, 255).astype(np.uint8)  # Convert to [0, 255] and cast to uint8
+            pixels_dataset[start_idx:end_idx] = pixel
+            
+        # Save labels to HDF5         
         labels_dataset[start_idx:end_idx] = labels.cpu().numpy()
-                    
+        
+        # Ensure data is flushed to disk  
         f.flush()
 
 if __name__ == "__main__":
