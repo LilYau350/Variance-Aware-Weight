@@ -48,19 +48,6 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps, power):
         t = np.linspace(0, num_diffusion_timesteps - 1, num_diffusion_timesteps)
         beta_t = beta_start + (beta_end - beta_start) * ((t) / (num_diffusion_timesteps)) ** power
         return beta_t
-
-    # elif schedule_name == "laplace":
-    #     t = np.arange(1, num_diffusion_timesteps + 1)
-    #     t_normalized = th.tensor((t - 1) / (num_diffusion_timesteps - 1), dtype=th.float64)
-    #     mu, b = 0.0, 0.5
-    #     log_term = 1 - 2 * th.abs(0.5 - t_normalized)
-    #     lmb = mu - b * th.sign(0.5 - t_normalized) * th.log(log_term)
-    #     snr = th.exp(lmb)        
-    #     alpha_t = th.sqrt(1 / (1 + 1/snr))  # sqrt(bar_alpha_t)
-    #     bar_alpha_t = alpha_t ** 2
-    #     alpha_t_single = th.cat([bar_alpha_t[:1], bar_alpha_t[1:] / (bar_alpha_t[:-1])])
-    #     beta_t = 1 - alpha_t_single
-    #     return beta_t.numpy() 
         
     else:
         raise NotImplementedError(f"unknown beta schedule: {schedule_name}")
@@ -166,9 +153,6 @@ class GaussianDiffusion:
         # P2 weighting
         self.p2_gamma = p2_gamma
         self.p2_k = p2_k
-                
-        # if self.gamma > 0:
-        #     self.feature_extractor = FeatureExtractor(device=device)
         
         # Use float64 for accuracy.
         betas = np.array(betas, dtype=np.float64)
@@ -895,8 +879,6 @@ class GaussianDiffusion:
                 ModelMeanType.START_X: x_start,
                 ModelMeanType.EPSILON: noise,
                 ModelMeanType.VELOCITY: alpha[:, None, None, None] * noise - sigma[:, None, None, None] * x_start,
-                # ModelMeanType.UNRAVEL: sigma[:, None, None, None] * noise - alpha[:, None, None, None] * x_start # u= \sqrt{1-\bar{alpha}_t}epsilon - \sqrt{\bar{alpha}_t}x_0
-                # ModelMeanType.UNRAVEL: # sigma[:, None, None, None] * noise - alpha[:, None, None, None] * x_start # u= \sqrt{1-\bar{alpha}_t}epsilon - \sqrt{\bar{alpha}_t}x_0
             }[self.model_mean_type]
             assert model_output.shape == target.shape == x_start.shape
 
@@ -905,12 +887,8 @@ class GaussianDiffusion:
             terms["mse"] = mse_loss_weight * raw_mse
 
             if self.gamma > 0:
-                # clf_feats = self.feature_extractor(x_start)
                 proj_loss = projection_loss(features, features_tilde)
                 terms["reg"] = self.gamma * proj_loss                
-                # ce_loss = self.classification_loss(features_tilde, model_kwargs['y'], snr)
-                # ce_loss = self.classification_loss(raw_mse)
-                # terms["reg"] = self.gamma * ce_loss
                                 
             if "vb" in terms:
                 terms["loss"] = terms["mse"] + terms["vb"]
@@ -921,30 +899,7 @@ class GaussianDiffusion:
         else:
             raise NotImplementedError(self.loss_type)
 
-        return terms
-    
-
-    # def regularization(self, model_output):
-    #     batch_size = model_output.size(0)  
-    #     flattened_output = model_output.view(batch_size, -1)  
-    #     normalized_output = F.normalize(flattened_output, p=2, dim=1, eps=1e-3) 
-    #     # normalized_output = flattened_output / th.norm(flattened_output, p=2, dim=1, keepdim=True)
-    #     cosine_similarity_matrix = th.mm(normalized_output, normalized_output.T)  
-    #     avg_cosine_similarity = th.sum(cosine_similarity_matrix) / (batch_size ** 2)
-    #     return - avg_cosine_similarity
-    
-    # def classification_loss(self, raw_mse):
-    #     prob = 1 - th.exp(-raw_mse) / th.sum(th.exp(-raw_mse))
-    #     return prob
-    
-    # def classification_loss(self, logits, labels, snr):
-    #     ce_loss = F.cross_entropy(logits, labels, reduction="none")   # (N,)
-    #     weight = snr / (snr + 1.0)     # (N,) in [0,1)
-    #     # ce_loss = ce_loss.mean()
-    #     ce_loss = (weight * ce_loss).mean()
-    #     # ce_loss = (weight * (snr >= 0.5) * ce_loss).mean()
-    #     return ce_loss
-        
+        return terms    
         
     def _prior_bpd(self, x_start):
         """
@@ -1150,8 +1105,6 @@ class FlowMatching:
         self.rtol = rtol
         
         self.gamma = gamma  
-        # if self.gamma > 0:
-        #     self.feature_extractor = FeatureExtractor(device=device)
             
     def expand_t_like_x(self, t, x):
         if t.dim() == 0:
