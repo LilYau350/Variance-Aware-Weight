@@ -1245,6 +1245,8 @@ class FlowMatching:
         raw_output= model(x, t, **model_kwargs)
         if isinstance(raw_output, tuple):
             model_output = raw_output[0]
+        else:
+            model_output = raw_output
         guidance_scale = guidance_scale(t_in.mean().item()) if callable(guidance_scale) else guidance_scale
         if not self.float_equal(guidance_scale, 1.0):
             cond, uncond = th.split(model_output, len(model_output) // 2, dim=0)
