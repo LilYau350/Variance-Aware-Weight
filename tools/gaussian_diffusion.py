@@ -136,7 +136,6 @@ class GaussianDiffusion:
         self.loss_type = loss_type
         self.rescale_timesteps = rescale_timesteps
 
-
         self.mse_loss_weight_type=args.weight_type
         self.gamma=args.gamma
         self.learn_sigma=args.learn_sigma
