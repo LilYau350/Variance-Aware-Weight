@@ -227,7 +227,7 @@ def save_metrics_to_csv(args, eval_dir, metrics, step):
         + f"dropout_{args.dropout}_"
         + f"drop_label_{args.drop_label_prob}_"
         + f"target_{args.mean_type}_"
-        + f"path_type_{args.path_type}_") 
+        + f"path_type_{args.path_type}_"
         + f"weight_{args.weight_type}_"
         + ("cond_" if args.class_cond else "")       
         + ("learn_sigma_" if args.learn_sigma else "")     
