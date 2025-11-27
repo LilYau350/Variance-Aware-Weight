@@ -227,19 +227,20 @@ def save_metrics_to_csv(args, eval_dir, metrics, step):
     params = (
         f"{args.model_mode}_{args.dataset}_{model_name}_"
         + (f"patch_{args.patch_size}_" if args.patch_size else "")
-        + f"lr_{args.lr}_"  
-        + f"betas_{args.betas}_"  
+        + f"lr_{args.lr}_"
+        + f"betas_{args.betas}_"
         + (f"lr_decay_{args.cosine_decay}_" if args.cosine_decay else "")        
         + f"dropout_{args.dropout}_"
         + f"drop_label_{args.drop_label_prob}_"
         + f"target_{args.mean_type}_"
-        + f"beta_sched_{args.beta_schedule}_" + (f"{args.p}_" if args.beta_schedule == 'power' else "")        
-        + f"weight_{args.weight_type}_"  
-        + ("cond_" if args.class_cond else "")        
-        + f"sampler_{args.sampler_type}_"
+        + (f"path_type_{args.path_type if args.model_mode == 'flow' else args.beta_schedule}_{args.p if args.beta_schedule == 'power' else ''}_")  
+        + f"weight_{args.weight_type}_"
+        + ("cond_" if args.class_cond else "")       
+        + ("learn_sigma_" if args.learn_sigma else "")     
+        + f"sampler_{args.sampler_type}_{args.solver}_"
         + f"sample_t_{args.sample_steps}_"
         + f"cfg_{args.guidance_scale}_"
-        )
+    )
 
     params = re.sub(r'[^\w\-_\. ]', '_', params).rstrip('_')
 
