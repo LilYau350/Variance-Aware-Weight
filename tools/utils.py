@@ -70,12 +70,7 @@ def save_checkpoint(args, step, model, optimizer, ema_model=None):
         }
         if ema_model is not None:
             state['ema_model'] = ema_model.state_dict()
-        filename = f"{args.mean_type}_{args.weight_type}_{args.beta_schedule}"
-        
-        if args.beta_schedule == "power":
-            filename += f"_{args.p}"
-            
-        filename += f"_{step}.pth"
+        filename = f"{args.mean_type}_{args.weight_type}_{args.path_type}_{step}.pth"
         filename = os.path.join(checkpoint_dir, filename)
         torch.save(state, filename)
         print(f"Checkpoint saved: {filename}")
@@ -130,8 +125,7 @@ def save_images(args, step, samples, labels, save_grid=False):
         #     sample_dir = os.path.join(args.logdir, args.dataset, 'generate_sample', args.mean_type)
         #     os.makedirs(sample_dir, exist_ok=True)
         #     shape_str = "x".join([str(x) for x in arr.shape[1:3]])
-        #     p = f"_{args.p}" if args.beta_schedule == "power" else ''
-        #     out_path = os.path.join(sample_dir, f"{args.dataset}_{shape_str}_{args.model}_{args.weight_type}_{args.beta_schedule}{p}_samples.npz")
+        #     out_path = os.path.join(sample_dir, f"{args.dataset}_{shape_str}_{args.model}_{args.weight_type}_{args.path_type}_samples.npz")
             
         #     if args.class_cond:
         #         label_arr = np.concatenate(labels, axis=0)[: args.num_samples]
@@ -233,7 +227,7 @@ def save_metrics_to_csv(args, eval_dir, metrics, step):
         + f"dropout_{args.dropout}_"
         + f"drop_label_{args.drop_label_prob}_"
         + f"target_{args.mean_type}_"
-        + (f"path_type_{args.path_type}_")  
+        + f"path_type_{args.path_type}_") 
         + f"weight_{args.weight_type}_"
         + ("cond_" if args.class_cond else "")       
         + ("learn_sigma_" if args.learn_sigma else "")     
