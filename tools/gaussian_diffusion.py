@@ -40,15 +40,6 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps, power):
             num_diffusion_timesteps,
             lambda t: math.cos((t + 0.008) / 1.008 * math.pi / 2) ** 2,
         )    
-    elif schedule_name == "power":
-        # Optimal schedule
-        scale = 1000 / num_diffusion_timesteps
-        beta_start = scale * 0.0001
-        beta_end = scale * 0.02
-        t = np.linspace(0, num_diffusion_timesteps - 1, num_diffusion_timesteps)
-        beta_t = beta_start + (beta_end - beta_start) * ((t) / (num_diffusion_timesteps)) ** power
-        return beta_t
-        
     else:
         raise NotImplementedError(f"unknown beta schedule: {schedule_name}")
 
