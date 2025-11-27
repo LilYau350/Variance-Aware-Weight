@@ -131,28 +131,27 @@ class GaussianDiffusion:
     def __init__(
         self,
         *,
+        args,
         betas,
         model_mean_type,
         model_var_type,
         loss_type,
         rescale_timesteps=False,
-        mse_loss_weight_type='constant',
-        gamma,
-        p2_gamma=1,
-        p2_k=1,
         device="cuda",
     ):
-
+        self.args = args
         self.model_mean_type = model_mean_type
         self.model_var_type = model_var_type
         self.loss_type = loss_type
         self.rescale_timesteps = rescale_timesteps
-        self.mse_loss_weight_type = mse_loss_weight_type
 
-        self.gamma = gamma      
-        # P2 weighting
-        self.p2_gamma = p2_gamma
-        self.p2_k = p2_k
+
+        self.mse_loss_weight_type=args.weight_type
+        self.gamma=args.gamma
+        self.learn_sigma=args.learn_sigma
+        
+        self.p2_gamma=args.p2_gamma
+        self.p2_k=args.p2_k
         
         # Use float64 for accuracy.
         betas = np.array(betas, dtype=np.float64)
@@ -1080,29 +1079,23 @@ class FlowMatching:
     def __init__(
         self,
         *,
-        model_mean_type,
-        mse_loss_weight_type='constant',
-        path_type,         
-        sampler_type="sde",   
-        p2_gamma=1,
-        p2_k=1,
-        atol=1e-6,
-        rtol=1e-5,
-        gamma,        
+        args,
+        model_mean_type, 
         device="cuda",
     ):
-        self.path_type = path_type        
+        self.args = args
         self.model_mean_type = model_mean_type
-        self.mse_loss_weight_type = mse_loss_weight_type
-        self.sampler_type = sampler_type
+        self.mse_loss_weight_type=args.weight_type   
+             
+        self.path_type = args.path_type      
+        self.sampler_type = args.sampler_type
+         
         # P2 weighting
-        self.p2_gamma = p2_gamma
-        self.p2_k = p2_k
-        #sample tolenace
-        self.atol = atol
-        self.rtol = rtol
+        self.p2_gamma=args.p2_gamma
+        self.p2_k=args.p2_k
         
-        self.gamma = gamma  
+        self.gamma=args.gamma
+        self.learn_sigma=args.learn_sigma
             
     def expand_t_like_x(self, t, x):
         if t.dim() == 0:
