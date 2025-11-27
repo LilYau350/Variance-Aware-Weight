@@ -110,8 +110,7 @@ class Sampler:
 
         vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{self.args.vae}", local_files_only=True).to(self.device) if self.args.in_chans == 4 else None
         net = Net(model=self.model, img_channels=self.args.in_chans, img_resolution=image_size, label_dim=num_classes,
-                  noise_schedule=self.args.beta_schedule, amp=self.args.amp, power=self.args.p,
-                  pred_type=self.args.mean_type).to(self.device)
+                  noise_schedule=self.args.path_type, amp=self.args.amp, pred_type=self.args.mean_type).to(self.device)
 
         while len(all_samples) * sample_size < num_samples:
             y_cond = self._get_y_cond(sample_size, num_classes)
@@ -231,3 +230,4 @@ class Sampler:
             
         else:
             raise ValueError(f"Unsupported model_mode: {self.args.model_mode}")
+
