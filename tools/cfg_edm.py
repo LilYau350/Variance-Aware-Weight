@@ -116,7 +116,7 @@ class Net(torch.nn.Module):
             return alphas_cumprod[self.M - j]
             
         else:
-            raise NotImplementedError(f"unknown beta schedule: {self.noise_schedule}")
+            raise NotImplementedError(f"unknown path type: {self.noise_schedule}")
 
     def round_sigma(self, sigma, return_index=False):
         sigma = torch.as_tensor(sigma)
