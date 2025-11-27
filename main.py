@@ -235,15 +235,12 @@ def build_diffusion(args, device, use_ddim=False):
             f"ddim{args.sample_steps}" if use_ddim and args.sample_steps < args.diffusion_steps else [args.diffusion_steps]
         )
         diffusion_kwargs = dict(
+            args=args,
             betas=betas,
             model_mean_type=ModelMeanType[args.mean_type.upper()],
             model_var_type=ModelVarType[args.var_type.upper()],
             loss_type=LossType[args.loss_type.upper()],
             rescale_timesteps=True,
-            mse_loss_weight_type=args.weight_type,
-            gamma=args.gamma,
-            p2_gamma=args.p2_gamma,
-            p2_k=args.p2_k,
             device=device,
         )
         if use_ddim:
@@ -256,21 +253,14 @@ def build_diffusion(args, device, use_ddim=False):
 
     elif args.model_mode == "flow":
         flow_kwargs = dict(
+            args=args,
             model_mean_type=ModelMeanType[args.mean_type.upper()],
-            mse_loss_weight_type=args.weight_type,    
-            path_type=args.path_type,   
-            sampler_type=args.sampler_type,         
-            p2_gamma=args.p2_gamma,
-            p2_k=args.p2_k,
-            atol = args.atol,
-            rtol = args.rtol,
-            gamma=args.gamma,
             device=device,
         )
         return FlowMatching(**flow_kwargs)
     
     else:
-        raise ValueError(f"Unsupported model_mode: {args.model_mode}")    
+        raise ValueError(f"Unsupported model_mode: {args.model_mode}")   
            
 def eval(args, **kwargs):
     ema_model, eval_dir, val_loader, step = (kwargs['ema_model'], kwargs['eval_dir'], kwargs['val_loader'], kwargs['step'])
