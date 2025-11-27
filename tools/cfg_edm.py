@@ -36,7 +36,6 @@ class Net(torch.nn.Module):
         self.C_1 = C_1
         self.C_2 = C_2
         self.M = M
-        self.power = power
         self.model = model
         self.noise_schedule = noise_schedule
         self.pred_type = pred_type  # 'eps', 'x0', or 'v'
