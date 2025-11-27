@@ -57,12 +57,11 @@ def parse_args():
     # Gaussian Diffusion
     parser.add_argument("--model_mode",type=str,default="diffusion",choices=["diffusion", "flow"],
                                                     help="Choose diffusion mode: 'flow' for SDE/ODE-based modeling, 'diffusion' for DDPM-like modeling.")
+    parser.add_argument("--path_type", type=str, default='linear', choices=['linear', 'cosine'], help="Path type for flow matching and diffusion")  
+    
     # Flow matching
-    parser.add_argument("--path_type", type=str, default='linear', choices=['linear', 'cosine'], help="Path type for flow matching")    
     parser.add_argument('--sampler_type', type=str, default='sde', choices=['sde', 'ode'], help='Type of flow matching sampler to use')   
     # Discrete Diffusion
-    parser.add_argument("--beta_schedule", type=str, default='cosine', help="Beta schedule type 'linear', 'cosine', 'laplace', and 'power'.")
-    parser.add_argument("--p", type=float, default=2, help="power for power schedule.")
     parser.add_argument("--diffusion_steps", type=int, default=1000, help="Number of diffusion steps")
     # loss type for diffusion or flow matching
     parser.add_argument("--mean_type", type=str, default='EPSILON', choices=['PREVIOUS_X', 'START_X', 'EPSILON', 'VELOCITY', 'VECTOR', 'SCORE'], help="Predict variable")
@@ -230,7 +229,7 @@ def build_model(args):
 
 def build_diffusion(args, device, use_ddim=False):
     if args.model_mode == "diffusion":
-        betas = get_named_beta_schedule(args.beta_schedule, args.diffusion_steps, args.p)
+        betas = get_named_beta_schedule(args.path_type, args.diffusion_steps)
         timestep_respacing = (
             f"ddim{args.sample_steps}" if use_ddim and args.sample_steps < args.diffusion_steps else [args.diffusion_steps]
         )
