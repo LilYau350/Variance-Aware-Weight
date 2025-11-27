@@ -17,7 +17,7 @@ from tools import logger
 import torch.nn.functional as F
 from classifier.feature_extractor import FeatureExtractor 
 
-def get_named_beta_schedule(schedule_name, num_diffusion_timesteps, power):
+def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
     """
     Get a pre-defined beta schedule for the given name.
 
