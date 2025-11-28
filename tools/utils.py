@@ -31,7 +31,7 @@ def generate_logdir(args):
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     logdir = os.path.join(args.logdir, timestamp)
     args.logdir = logdir
-     if dist_util.is_main_process():           
+    if dist_util.is_main_process():           
         os.makedirs(logdir, exist_ok=True)
         config_path = os.path.join(logdir, "config.yaml")
         with open(config_path, "w") as f:
@@ -224,14 +224,15 @@ def eval_accuracy(args, val_loader, model, device, desc="ValDataset", topk=(1,5)
     return top1, top5
 
 def save_metrics_to_csv(args, metrics, step):
-    csv_filename = os.path.join(args.logdir, f"metrics.csv")
-    file_exists = os.path.isfile(csv_filename)
-    
-    with open(csv_filename, 'a', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        if not file_exists:
-            writer.writerow(['Step'] + list(metrics.keys()))
-        # writer.writerow([step] + list(metrics.values()))
-        formatted_values = [f"{value:.2f}" if isinstance(value, (float, int)) else value for value in metrics.values()]
-        writer.writerow([step] + formatted_values)
+    if dist_util.is_main_process(): 
+        csv_filename = os.path.join(args.logdir, f"metrics.csv")
+        file_exists = os.path.isfile(csv_filename)
+        
+        with open(csv_filename, 'a', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            if not file_exists:
+                writer.writerow(['Step'] + list(metrics.keys()))
+            # writer.writerow([step] + list(metrics.values()))
+            formatted_values = [f"{value:.2f}" if isinstance(value, (float, int)) else value for value in metrics.values()]
+            writer.writerow([step] + formatted_values)
 
