@@ -8,6 +8,7 @@ import yaml
 import random
 import torch
 import numpy as np
+from datetime import datetime
 import torch.distributed as dist
 from torchvision.utils import make_grid, save_image
 from tools import dist_util
