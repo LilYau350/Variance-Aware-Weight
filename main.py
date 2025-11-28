@@ -314,7 +314,6 @@ def train(args, **kwargs):
             loss = trainer.train_step(step)      
             # Sample and save images
             if args.sample_freq > 0 and step % args.sample_freq == 0:
-                # sample_and_save(args, step, device, ema_model, sample_diffusion, save_grid=True)
                 generate_samples(args, step, device, ema_model, sample_diffusion, save_grid=True)
     
             # Save checkpoint
@@ -359,8 +358,6 @@ def init(args):
         if args.parallel:
             model = DDP(model, device_ids=[local_rank], output_device=local_rank)
             ema_model = DDP(ema_model, device_ids=[local_rank], output_device=local_rank)
-            # model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True,)
-            # ema_model = DDP(ema_model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True,)
     if args.train:
         optimizer = optim.AdamW(model.parameters(), lr=args.lr, betas=args.betas, weight_decay=args.weight_decay, eps=args.eps)
         scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=get_lr_lambda(args))
