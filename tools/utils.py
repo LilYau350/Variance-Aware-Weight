@@ -127,19 +127,19 @@ def save_images(args, step, samples, labels, save_grid=False):
             os.makedirs(sample_dir, exist_ok=True)
             path = os.path.join(sample_dir, f'{step}.png')
             save_image(grid, path)
-        # else:
-        #     # Save for evaluation purposes
-        #     sample_dir = os.path.join(args.logdir, 'generate_sample')
-        #     os.makedirs(sample_dir, exist_ok=True)
-        #     shape_str = "x".join([str(x) for x in arr.shape[1:3]])
-        #     out_path = os.path.join(sample_dir, f"{args.dataset}_{shape_str}_samples.npz")
+        else:
+            # Save for evaluation purposes
+            sample_dir = os.path.join(args.logdir, 'generate_sample')
+            os.makedirs(sample_dir, exist_ok=True)
+            shape_str = "x".join([str(x) for x in arr.shape[1:3]])
+            out_path = os.path.join(sample_dir, f"{args.dataset}_{shape_str}_samples.npz")
             
-        #     if args.class_cond:
-        #         label_arr = np.concatenate(labels, axis=0)[: args.num_samples]
-        #         np.savez(out_path, arr, label_arr)
-        #     else:
-        #         np.savez(out_path, arr)
-        #     print(f"Evaluation samples saved at {out_path}")
+            if args.class_cond:
+                label_arr = np.concatenate(labels, axis=0)[: args.num_samples]
+                np.savez(out_path, arr, label_arr)
+            else:
+                np.savez(out_path, arr)
+            print(f"Evaluation samples saved at {out_path}")
 
         return arr  # Return the sampled images array for evaluation
         
