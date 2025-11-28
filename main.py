@@ -325,7 +325,7 @@ def train(args, **kwargs):
 
 
 def init(args):
-    generate_logdir(args.logdir)
+    generate_logdir(args)
     if args.parallel:
         dist_util.setup_dist()  
         local_rank = int(os.getenv('LOCAL_RANK', 0))
