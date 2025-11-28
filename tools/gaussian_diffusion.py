@@ -15,7 +15,7 @@ from tools.nn import mean_flat
 from tools.losses import normal_kl, discretized_gaussian_log_likelihood
 from tools import logger
 import torch.nn.functional as F
-from classifier.feature_extractor import FeatureExtractor 
+
 
 def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
     """
