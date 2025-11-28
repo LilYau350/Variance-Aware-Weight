@@ -325,7 +325,6 @@ def train(args, **kwargs):
 
 
 def init(args):
-    generate_logdir(args)
     if args.parallel:
         dist_util.setup_dist()  
         local_rank = int(os.getenv('LOCAL_RANK', 0))
@@ -333,7 +332,9 @@ def init(args):
     else:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
+    generate_logdir(args)
     set_random_seed(args, args.seed)
+    
     train_loader, val_loader = build_dataset(args)
     
     diffusion = build_diffusion(args, device, use_ddim=False)
