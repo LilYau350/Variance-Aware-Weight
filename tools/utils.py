@@ -35,14 +35,17 @@ def snapshot_python_sources(args):
     current_logdir = Path(args.logdir).resolve()     
     logs_root = current_logdir.parent               
     dst_root = current_logdir / "code"
-    for src in project_root.rglob("*.py"):
-        if logs_root in src.parents:
-            continue
-        if "__pycache__" in src.parts: 
-            continue
-        dst = dst_root / src.relative_to(project_root)
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dst)
+
+    for pattern in ("*.py", "*.cpp", "*.cu"):
+        for src in project_root.rglob(pattern):
+            if logs_root in src.parents:
+                continue
+            if "__pycache__" in src.parts: 
+                continue
+            dst = dst_root / src.relative_to(project_root)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+
     print(f"[snapshot] python sources saved to {dst_root}")
     
 def generate_logdir(args):
