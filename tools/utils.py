@@ -132,7 +132,7 @@ def save_images(args, step, samples, labels, save_grid=False):
         #     sample_dir = os.path.join(args.logdir, 'generate_sample')
         #     os.makedirs(sample_dir, exist_ok=True)
         #     shape_str = "x".join([str(x) for x in arr.shape[1:3]])
-        #     out_path = os.path.join(sample_dir, f"{args.dataset}_{shape_str}_{args.model}_{args.weight_type}_{args.path_type}_samples.npz")
+        #     out_path = os.path.join(sample_dir, f"{args.dataset}_{shape_str}_samples.npz")
             
         #     if args.class_cond:
         #         label_arr = np.concatenate(labels, axis=0)[: args.num_samples]
