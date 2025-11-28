@@ -313,8 +313,8 @@ def train(args, **kwargs):
     
             # Save checkpoint
             if args.save_step > 0 and step % args.save_step == 0 and step > 0:
-                if dist_util.is_main_process():
-                    save_checkpoint(args, step, model, optimizer, ema_model=ema_model)  
+                # if dist_util.is_main_process():
+                save_checkpoint(args, step, model, optimizer, ema_model=ema_model)  
         
             # Evaluate
             if args.eval and args.eval_step > 0 and step % args.eval_step == 0 and step > 0:
