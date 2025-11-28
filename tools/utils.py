@@ -24,7 +24,16 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
+def generate_logdir(args):
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    logdir = os.path.join(args.logdir, timestamp)
+    args.logdir = logdir
+    os.makedirs(logdir, exist_ok=True)
 
+    config_path = os.path.join(logdir, "config.yaml")
+    with open(config_path, "w") as f:
+        yaml.safe_dump(vars(args), f, sort_keys=False)
+        
 def set_random_seed(args, seed):
     rank = dist.get_rank() if args.parallel else 0
     seed = seed + rank
@@ -61,7 +70,7 @@ def save_checkpoint(args, step, model, optimizer, ema_model=None):
     if "DiT" in model_name and args.model_mode == 'flow':
         model_name = 'SiT' + model_name[3:]
     if dist_util.is_main_process():
-        checkpoint_dir = os.path.join('checkpoint', args.dataset, model_name)
+        checkpoint_dir = os.path.join(args.logdir, 'checkpoint',)
         os.makedirs(checkpoint_dir, exist_ok=True)
         state = {
             'model': model.state_dict(),
@@ -70,11 +79,10 @@ def save_checkpoint(args, step, model, optimizer, ema_model=None):
         }
         if ema_model is not None:
             state['ema_model'] = ema_model.state_dict()
-        filename = f"{args.mean_type}_{args.weight_type}_{args.path_type}_{step}.pth"
+        filename = f"{model_name}_{args.mean_type}_{args.path_type}_{step}.pth"
         filename = os.path.join(checkpoint_dir, filename)
         torch.save(state, filename)
         print(f"Checkpoint saved: {filename}")
-
 
 def load_checkpoint(ckpt_path, model=None, optimizer=None, ema_model=None):
     if dist_util.is_main_process():
@@ -105,7 +113,6 @@ def generate_samples(args, step, device, eval_model, sample_diffusion, save_grid
         
     return save_images(args, step, all_samples,all_labels, save_grid)    
     
-    
 def save_images(args, step, samples, labels, save_grid=False):
     """Save sampled images as a grid."""
     if dist_util.is_main_process():
@@ -116,13 +123,13 @@ def save_images(args, step, samples, labels, save_grid=False):
             # Save as grid image if 'save_grid' is True
             torch_samples = torch.from_numpy(arr).permute(0, 3, 1, 2).float() / 255.0
             grid = make_grid(torch_samples, pad_value=0.5)
-            sample_dir = os.path.join(args.logdir, args.dataset, 'sample')
+            sample_dir = os.path.join(args.logdir, 'sample')
             os.makedirs(sample_dir, exist_ok=True)
             path = os.path.join(sample_dir, f'{step}.png')
             save_image(grid, path)
         # else:
         #     # Save for evaluation purposes
-        #     sample_dir = os.path.join(args.logdir, args.dataset, 'generate_sample', args.mean_type)
+        #     sample_dir = os.path.join(args.logdir, 'generate_sample')
         #     os.makedirs(sample_dir, exist_ok=True)
         #     shape_str = "x".join([str(x) for x in arr.shape[1:3]])
         #     out_path = os.path.join(sample_dir, f"{args.dataset}_{shape_str}_{args.model}_{args.weight_type}_{args.path_type}_samples.npz")
@@ -136,8 +143,7 @@ def save_images(args, step, samples, labels, save_grid=False):
 
         return arr  # Return the sampled images array for evaluation
         
-    return None    
-
+    return None  
 
 def calculate_metrics(args, eval_model, **kwargs):
     
@@ -214,31 +220,8 @@ def eval_accuracy(args, val_loader, model, device, desc="ValDataset", topk=(1,5)
         
     return top1, top5
 
-def save_metrics_to_csv(args, eval_dir, metrics, step):
-    model_name = args.model
-    if "DiT" in model_name and args.model_mode == 'flow':
-        model_name = 'SiT' + model_name[3:]
-    params = (
-        f"{args.model_mode}_{args.dataset}_{model_name}_"
-        + (f"patch_{args.patch_size}_" if args.patch_size else "")
-        + f"lr_{args.lr}_"
-        + f"betas_{args.betas}_"
-        + (f"lr_decay_{args.cosine_decay}_" if args.cosine_decay else "")        
-        + f"dropout_{args.dropout}_"
-        + f"drop_label_{args.drop_label_prob}_"
-        + f"target_{args.mean_type}_"
-        + f"path_type_{args.path_type}_"
-        + f"weight_{args.weight_type}_"
-        + ("cond_" if args.class_cond else "")       
-        + ("learn_sigma_" if args.learn_sigma else "")     
-        + f"sampler_{args.sampler_type}_{args.solver}_"
-        + f"sample_t_{args.sample_steps}_"
-        + f"cfg_{args.guidance_scale}_"
-    )
-
-    params = re.sub(r'[^\w\-_\. ]', '_', params).rstrip('_')
-
-    csv_filename = os.path.join(eval_dir, f"{params}.csv")
+def save_metrics_to_csv(args, metrics, step):
+    csv_filename = os.path.join(args.logdir, f"metrics.csv")
     file_exists = os.path.isfile(csv_filename)
     
     with open(csv_filename, 'a', newline='') as csvfile:
