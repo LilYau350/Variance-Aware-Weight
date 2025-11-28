@@ -28,14 +28,15 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
 def generate_logdir(args):
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    logdir = os.path.join(args.logdir, timestamp)
-    args.logdir = logdir
-    os.makedirs(logdir, exist_ok=True)
+    if dist_util.is_main_process():
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        logdir = os.path.join(args.logdir, timestamp)
+        args.logdir = logdir
+        os.makedirs(logdir, exist_ok=True)
 
-    config_path = os.path.join(logdir, "config.yaml")
-    with open(config_path, "w") as f:
-        yaml.safe_dump(vars(args), f, sort_keys=False)
+        config_path = os.path.join(logdir, "config.yaml")
+        with open(config_path, "w") as f:
+            yaml.safe_dump(vars(args), f, sort_keys=False)
         
 def set_random_seed(args, seed):
     rank = dist.get_rank() if args.parallel else 0
