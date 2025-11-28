@@ -1,5 +1,6 @@
 import argparse
 import csv
+import sys
 import os
 import re
 import math
@@ -8,6 +9,8 @@ import yaml
 import random
 import torch
 import numpy as np
+import shutil
+from pathlib import Path
 from datetime import datetime
 import torch.distributed as dist
 from torchvision.utils import make_grid, save_image
@@ -27,12 +30,28 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
+def snapshot_python_sources(args):
+    project_root = Path(sys.argv[0]).resolve().parent
+    current_logdir = Path(args.logdir).resolve()     
+    logs_root = current_logdir.parent               
+    dst_root = current_logdir / "code"
+    for src in project_root.rglob("*.py"):
+        if logs_root in src.parents:
+            continue
+        if "__pycache__" in src.parts: 
+            continue
+        dst = dst_root / src.relative_to(project_root)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+    print(f"[snapshot] python sources saved to {dst_root}")
+    
 def generate_logdir(args):
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     logdir = os.path.join(args.logdir, timestamp)
     args.logdir = logdir
-    if dist_util.is_main_process():           
+    if dist_util.is_main_process():       
         os.makedirs(logdir, exist_ok=True)
+        snapshot_python_sources(args) 
         config_path = os.path.join(logdir, "config.yaml")
         with open(config_path, "w") as f:
             yaml.safe_dump(vars(args), f, sort_keys=False)
