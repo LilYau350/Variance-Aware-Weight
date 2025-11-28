@@ -280,8 +280,8 @@ def eval(args, **kwargs):
         metrics['Top-1 (EMA)'] = top1
         metrics['Top-5 (EMA)'] = top5
         
-    if dist_util.is_main_process():
-        save_metrics_to_csv(args, metrics, step)
+    #if dist_util.is_main_process():
+    save_metrics_to_csv(args, metrics, step)
 
 def train(args, **kwargs):
     model, ema_model, checkpoint, diffusion, sample_diffusion, train_loader, optimizer, scheduler, device = (
