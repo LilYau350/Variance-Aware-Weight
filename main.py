@@ -262,7 +262,7 @@ def build_diffusion(args, device, use_ddim=False):
         raise ValueError(f"Unsupported model_mode: {args.model_mode}")   
            
 def eval(args, **kwargs):
-    ema_model, val_loader, step = (kwargs['ema_model'], kwargs['eval_dir'], kwargs['val_loader'], kwargs['step'])
+    ema_model, val_loader, step = (kwargs['ema_model'], kwargs['val_loader'], kwargs['step'])
     # Evaluate net_model and ema_model
     ema_is_score, ema_fid, ema_sfid, ema_pre, ema_rec = calculate_metrics(args, ema_model, **kwargs)
     if dist_util.is_main_process():
