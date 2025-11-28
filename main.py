@@ -262,8 +262,7 @@ def build_diffusion(args, device, use_ddim=False):
         raise ValueError(f"Unsupported model_mode: {args.model_mode}")   
            
 def eval(args, **kwargs):
-    ema_model, eval_dir, val_loader, step = (kwargs['ema_model'], kwargs['eval_dir'], kwargs['val_loader'], kwargs['step'])
-         
+    ema_model, val_loader, step = (kwargs['ema_model'], kwargs['eval_dir'], kwargs['val_loader'], kwargs['step'])
     # Evaluate net_model and ema_model
     ema_is_score, ema_fid, ema_sfid, ema_pre, ema_rec = calculate_metrics(args, ema_model, **kwargs)
     if dist_util.is_main_process():
@@ -287,10 +286,9 @@ def eval(args, **kwargs):
         metrics['Top-5 (EMA)'] = top5
         
     if dist_util.is_main_process():
-        save_metrics_to_csv(args, eval_dir, metrics, step)
+        save_metrics_to_csv(args, metrics, step)
 
 def train(args, **kwargs):
-    
     model, ema_model, checkpoint, diffusion, sample_diffusion, train_loader, optimizer, scheduler, device = (
         kwargs['model'], kwargs['ema_model'], kwargs['checkpoint'], 
         kwargs['diffusion'], kwargs['sample_diffusion'], kwargs['train_loader'],
@@ -333,6 +331,7 @@ def train(args, **kwargs):
 
 
 def init(args):
+    generate_logdir(args.logdir)
     if args.parallel:
         dist_util.setup_dist()  
         local_rank = int(os.getenv('LOCAL_RANK', 0))
@@ -383,7 +382,6 @@ def init(args):
     config.gpu_options.allow_growth = True
     evaluator = Evaluator(tf.Session(config=config))
 
-    eval_dir = os.path.join(args.logdir, args.dataset, 'evaluate')
     if dist_util.is_main_process():
         print("warming up TensorFlow...")
         # This will cause TF to print a bunch of verbose stuff now rather
@@ -394,8 +392,6 @@ def init(args):
         ref_acts = evaluator.read_activations(args.ref_batch)
         print("computing/reading reference batch statistics...")
         ref_stats, ref_stats_spatial = evaluator.read_statistics(args.ref_batch, ref_acts)
-        
-        os.makedirs(eval_dir, exist_ok=True)
     else:
         ref_acts, ref_stats, ref_stats_spatial = None, None, None
 
@@ -405,7 +401,7 @@ def init(args):
     return {
         'device': device, 'train_loader': train_loader, 'val_loader': val_loader, 'model': model, 'ema_model': ema_model, 'checkpoint': checkpoint,
         'diffusion': diffusion, 'sample_diffusion': sample_diffusion, 'optimizer': optimizer, 'scheduler': scheduler,'evaluator': evaluator, 
-        'ref_acts': ref_acts, 'ref_stats': ref_stats, 'ref_stats_spatial': ref_stats_spatial, 'eval_dir': eval_dir, 'step': step }
+        'ref_acts': ref_acts, 'ref_stats': ref_stats, 'ref_stats_spatial': ref_stats_spatial, 'step': step }
 
 def main():
     args = parse_args()
