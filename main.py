@@ -53,6 +53,7 @@ def parse_args():
     parser.add_argument("--model_mode",type=str,default="diffusion",choices=["diffusion", "flow"],
                                                     help="Choose diffusion mode: 'flow' for SDE/ODE-based modeling, 'diffusion' for DDPM-like modeling.")
     parser.add_argument("--path_type", type=str, default='linear', choices=['linear', 'cosine'], help="Path type for flow matching and diffusion")  
+    parser.add_argument('--time_dist', nargs='+', default=['uniform', -0.8, 0.8], help="Time sampling distribution for mean flow training: ['uniform'] or ['lognorm', mu, sigma]")
     
     # Flow matching
     parser.add_argument('--sampler_type', type=str, default='sde', choices=['sde', 'ode'], help='Type of flow matching sampler to use')   
@@ -76,7 +77,8 @@ def parse_args():
     parser.add_argument("--total_steps", type=int, default=400000, help="Total training steps") 
     parser.add_argument("--ema_decay", type=float, default=0.9999, help="EMA decay rate")        
     parser.add_argument("--class_cond", default=False, type=str2bool, help="Set class_cond to enable class-conditional generation.")
-    parser.add_argument("--learn_sigma", default=False, type=str2bool, help="Set learn_sigma to enable learn distribution sigma.")    
+    parser.add_argument("--learn_sigma", default=False, type=str2bool, help="Set learn_sigma to enable learn distribution sigma.")   
+    parser.add_argument("--learn_align", default=False, type=str2bool, help="Set learn_align to make representation align.")  
     # Adam settings
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     parser.add_argument('--betas', type=float, nargs=2, default=(0.9, 0.999), help='Beta values for optimization')
@@ -214,9 +216,8 @@ def build_model(args):
                                        drop_label_prob=args.drop_label_prob)
 
     elif "DiT" in args.model:
-        model = model_dict[args.model](image_size=args.image_size, patch_size=args.patch_size,
-                                       in_channels=args.in_chans, num_classes=args.num_classes,
-                                       learn_sigma=args.learn_sigma, encoder_depth=args.encoder_depth,
+        model = model_dict[args.model](image_size=args.image_size, patch_size=args.patch_size, in_channels=args.in_chans, num_classes=args.num_classes,
+                                       learn_sigma=args.learn_sigma, learn_align=args.learn_align, encoder_depth=args.encoder_depth,
                                        class_dropout_prob=args.drop_label_prob)
     
     return model
@@ -261,13 +262,7 @@ def eval(args, **kwargs):
     # Evaluate net_model and ema_model
     ema_is_score, ema_fid, ema_sfid, ema_pre, ema_rec = calculate_metrics(args, ema_model, **kwargs)
     if dist_util.is_main_process():
-        print(f"Model(EMA): IS:{ema_is_score:.2f}, FID:{ema_fid:.2f}, sFID:{ema_sfid:.2f}, Pre:{ema_pre:.2f}, Rec:{ema_rec:.2f}")
-        
-    top1, top5 = None, None
-    # if args.num_classes >= 10:
-    #     top1, top5 = eval_accuracy(args, val_loader, ema_model, kwargs['device'], desc="Val-Dataset", topk=(1,5))   
-    #     if dist_util.is_main_process():
-    #         print(f"Model(EMA): Top-1:{top1:.2f}%, Top-5:{top5:.2f}%")      
+        print(f"Model(EMA): IS:{ema_is_score:.2f}, FID:{ema_fid:.2f}, sFID:{ema_sfid:.2f}, Pre:{ema_pre:.2f}, Rec:{ema_rec:.2f}")    
             
     metrics = {
         'IS (EMA)': ema_is_score,
@@ -276,9 +271,6 @@ def eval(args, **kwargs):
         'Pre. (EMA)': ema_pre,
         'Rec. (EMA)': ema_rec,
     }
-    if top1 is not None and top5 is not None:
-        metrics['Top-1 (EMA)'] = top1
-        metrics['Top-5 (EMA)'] = top5
         
     #if dist_util.is_main_process():
     save_metrics_to_csv(args, metrics, step)
