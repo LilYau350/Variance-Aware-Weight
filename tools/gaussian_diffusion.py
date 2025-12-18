@@ -833,7 +833,7 @@ class GaussianDiffusion:
 
             if isinstance(raw_output, tuple):
                 model_output = raw_output[0]
-                features_tilde = raw_output[1] if len(raw_output) > 1 else None
+                sec_out = raw_output[1] if len(raw_output) > 1 else None
             else:
                 model_output = raw_output
             
@@ -873,13 +873,14 @@ class GaussianDiffusion:
                 
             terms["mse"] = mse_loss_weight * raw_mse
 
-            if self.gamma > 0:
-                proj_loss = projection_loss(features, features_tilde)
-                terms["reg"] = self.gamma * proj_loss                
+            if self.args.learn_align:
+                assert self.gamma > 0, "Gamma must be greater than 0 for align loss"
+                proj_loss = cosine_similarity(features, sec_out)
+                terms["reg"] = self.gamma * proj_loss                 
                                 
             if "vb" in terms:
                 terms["loss"] = terms["mse"] + terms["vb"]
-            elif self.gamma > 0:
+            elif self.args.learn_align:
                  terms["loss"] = terms["mse"] + terms["reg"]
             else:
                 terms["loss"] = terms["mse"]
@@ -963,11 +964,11 @@ class GaussianDiffusion:
             "mse": mse,
         }
 
-def projection_loss(z, z_tilde):
-    z = F.normalize(z, dim=-1)
-    z_tilde = F.normalize(z_tilde, dim=-1)
-    proj_loss = -th.mean(th.sum(z * z_tilde, dim=-1))
-    return proj_loss
+# def projection_loss(z, z_tilde):
+#     z = F.normalize(z, dim=-1)
+#     z_tilde = F.normalize(z_tilde, dim=-1)
+#     proj_loss = -th.mean(th.sum(z * z_tilde, dim=-1))
+#     return proj_loss
 
 def cosine_similarity(target, output):
     cosine_sim = F.cosine_similarity(target, output, dim=-1)
@@ -1165,6 +1166,19 @@ class FlowMatching:
             raise NotImplementedError("Unsupported model_mean_type for score")
 
         return score
+
+    def sample_t(self, x_start):
+        if self.time_dist[0] == 'uniform':
+            t = th.rand(x_start.shape[0], device=x_start.device)
+        elif self.time_dist[0] == 'lognorm':
+            # logit-normal: z ~ N(mu, sigma^2), t = sigmoid(z)
+            mu, sigma = float(self.time_dist[-2]), float(self.time_dist[-1])
+            normal_samples = th.randn(x_start.shape[0], device=x_start.device) * sigma + mu
+            t = th.sigmoid(normal_samples)
+        else:
+            raise NotImplementedError(f"Unknown time_dist: {self.time_dist}")
+            
+        return t
     
     def q_sample(self, x_start, noise, t,):
         t = self.expand_t_like_x(t, x_start)
@@ -1179,7 +1193,7 @@ class FlowMatching:
         if noise is None:
             noise = th.randn_like(x_start)
         if t is None:
-            t = th.rand(x_start.shape[0], device=x_start.device)
+            t = self.sample_t(x_start)
         
         alpha_t, sigma_t, d_alpha_t, d_sigma_t = self.interpolant(t)     
                      
@@ -1201,7 +1215,7 @@ class FlowMatching:
 
         if isinstance(raw_output, tuple):
             model_output = raw_output[0]
-            features_tilde = raw_output[1] if len(raw_output) > 1 else None
+            sec_out = raw_output[1] if len(raw_output) > 1 else None
         else:
             model_output = raw_output
         
@@ -1211,12 +1225,13 @@ class FlowMatching:
             
         terms["mse"] = mse_loss_weight * raw_mse
         
-        if self.gamma > 0:
-            proj_loss = projection_loss(features, features_tilde)
-            terms["reg"] = self.gamma * proj_loss                
+        if self.args.learn_align:
+            assert self.gamma > 0, "Gamma must be greater than 0 for align loss"
+            proj_loss = cosine_similarity(features, sec_out)
+            terms["reg"] = self.gamma * proj_loss                  
     
-        if self.gamma > 0:
-                terms["loss"] = terms["mse"] + terms["reg"]
+        if self.args.learn_align:
+            terms["loss"] = terms["mse"] + terms["reg"]
         else:
             terms["loss"] = terms["mse"]
             
