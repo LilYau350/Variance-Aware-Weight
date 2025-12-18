@@ -182,6 +182,7 @@ class DiT(nn.Module):
         class_dropout_prob=0.1,
         num_classes=1000,
         learn_sigma=False,
+        learn_align=False,
         encoder_depth=8,
         z_dims=768,
         projector_dim=2048,
@@ -189,30 +190,26 @@ class DiT(nn.Module):
     ):
         super().__init__()
         self.learn_sigma = learn_sigma
+        self.learn_align = learn_align
         self.in_channels = in_channels
         self.out_channels = in_channels * 2 if learn_sigma else in_channels
         self.patch_size = patch_size
         self.num_heads = num_heads
         
         # self.z_dims = z_dims
-        self.encoder_depth = encoder_depth
-        self.align = self.encoder_depth > 0 
+        self.encoder_depth = encoder_depth     
+        assert not self.learn_align or self.encoder_depth > 0, "encoder_depth must be > 0 when learn_align=True"
         
         self.x_embedder = PatchEmbed(image_size, patch_size, in_channels, hidden_size, bias=True)
         self.t_embedder = TimestepEmbedder(hidden_size)
         self.y_embedder = LabelEmbedder(num_classes, hidden_size, class_dropout_prob)
         num_patches = self.x_embedder.num_patches
         
-        self.cls_token = None
-        # self.cls_token = nn.Parameter(torch.randn(1, 1, hidden_size))    
-        self.use_cls_token = self.cls_token is not None     
-        self.extra_tokens = 1 if self.use_cls_token else 0
-        
         # Will use fixed sin-cos embedding:
-        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + self.extra_tokens, hidden_size), requires_grad=False)
+        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
 
         self.blocks = nn.ModuleList([DiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio) for _ in range(depth)])
-        self.projectors = build_mlp(hidden_size, projector_dim, z_dims) if self.align else None
+        self.projectors = build_mlp(hidden_size, projector_dim, z_dims) if self.learn_align else None
         self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
         
         self.initialize_weights()
@@ -227,7 +224,7 @@ class DiT(nn.Module):
         self.apply(_basic_init)
         
         # Initialize (and freeze) pos_embed by sin-cos embedding:
-        pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches**0.5), cls_token=self.use_cls_token, extra_tokens=self.extra_tokens)
+        pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches**0.5))
         
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
@@ -276,15 +273,8 @@ class DiT(nn.Module):
         t: (N,)
         y: (N,)
         """
-        x = self.x_embedder(x)  # (N, T, D)
-        N, T, D = x.shape
-        
-        if self.use_cls_token:
-            cls_token = self.cls_token.expand(N, 1, -1)   # (N,1,D)
-            x = torch.cat([cls_token, x], dim=1)          # (N, T+1, D)
-            
-        x = x + self.pos_embed    
-        
+        x = self.x_embedder(x) + self.pos_embed   # (N, T, D)
+
         t_emb = self.t_embedder(t)                 # (N, D)
         y_emb = self.y_embedder(y, self.training)  # (N, D)
         c = t_emb + y_emb                      # (N, D)
@@ -292,11 +282,9 @@ class DiT(nn.Module):
         zs = None
         for i, block in enumerate(self.blocks):
             x = block(x, c)  # (N, T, D)
-            if self.align and (i + 1) == self.encoder_depth:
-                # zs = x[:, self.extra_tokens:]
-                zs = self.projectors(x[:, self.extra_tokens:].reshape(-1, D)).reshape(N, T, -1)  # (N, T, z_dim)
+            if self.learn_align and (i + 1) == self.encoder_depth:
+                zs = self.projectors(x)        # (N, T, z_dim)
         
-        x = x[:, self.extra_tokens:]           # (N, T, D)
         x = self.final_layer(x, c)             # (N, T, p^2 * out_channels)
         x = self.unpatchify(x)                 # (N, out_channels, H, W)
         
