@@ -143,7 +143,7 @@ def save_compressed_latents(data_loader, f, dataset_name, device, vae, save_pixe
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Autoencoder Image Compression/Decompression")
-    parser.add_argument("--input", type=str, default="/data/ImageNet/LSVRC2012", help="Input folder path or latent file")
+    parser.add_argument("--input", type=str, default="/data/ImageNet/ILSVRC2012", help="Input folder path or latent file")
     parser.add_argument("--output", type=str, default="/data/ImageNet", help="Output folder path")
     parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for processing images")
@@ -164,3 +164,4 @@ if __name__ == "__main__":
     with h5py.File(h5_file, 'w') as f:
         save_compressed_latents(train_loader, f, "train", device, vae, args.save_pixels)
         save_compressed_latents(val_loader, f, "val", device, vae, args.save_pixels)
+
