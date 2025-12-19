@@ -117,7 +117,7 @@ class Sampler:
             z = torch.randn([sample_size, net.img_channels, net.img_resolution, net.img_resolution], device=self.device)
             class_labels, z = self._prepare_labels(y_cond, num_classes, sample_size, z)
 
-            guidance_scale = self._limited_interval_guidance(self.args.t_from, self.args.t_to, self.args.guidance_scale)
+            guidance_scale = self._limited_interval_guidance(self.args.interval, self.args.guidance_scale)
 
             sample = ablation_sampler(net, latents=z, num_steps=self.args.sample_steps, solver=self.args.solver,
                                       discretization=self.args.discretization, schedule=self.args.schedule, scaling=self.args.scaling,
@@ -151,7 +151,7 @@ class Sampler:
             z = torch.randn([sample_size, self.args.in_chans, image_size, image_size], device=self.device)
             class_labels, z = self._prepare_labels(y_cond, num_classes, sample_size, z)
 
-            guidance_scale = self._limited_interval_guidance(self.args.t_from, self.args.t_to, self.args.guidance_scale)
+            guidance_scale = self._limited_interval_guidance(self.args.interval, self.args.guidance_scale)
 
             sample = self.diffusion.sample(self.model, z, self.device, num_steps=self.args.sample_steps, solver=self.args.solver,
                                            guidance_scale=guidance_scale, y=class_labels)
@@ -198,10 +198,11 @@ class Sampler:
             return torch.cat((y_cond, y_uncond), dim=0), z 
         return y_cond, z
 
-    def _limited_interval_guidance(self, t_from, t_to, guidance_scale):
+    def _limited_interval_guidance(self, interval, guidance_scale):
+        t_from, t_to = interval
         if t_from >= 0 and t_to > t_from:
-            return lambda t: guidance_scale if t_from <= t <= t_to else 1.0
-        return guidance_scale
+            return lambda t: guidance_scale if (t_from <= t < t_to) else 1.0
+        return lambda t: guidance_scale
 
     def _process_sample(self, sample, vae):
         if not float_equal(self.args.guidance_scale, 1.0) and self.args.solver != 'ddim':
