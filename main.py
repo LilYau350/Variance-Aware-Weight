@@ -109,9 +109,10 @@ def parse_args():
     parser.add_argument("--class_labels", type=int, nargs="+", default=None, help="Specify the class labels used for sampling, e.g., --class_labels 207 360 387") 
     parser.add_argument("--use_classifier", type=str, default=None, help="Path to the pre-trained classifier model")
     # cfg and limited interval guidance
-    parser.add_argument('--guidance_scale', type=float, default=1.0, help='Scale factor for classifier-free guidance')       
-    parser.add_argument('--t_from', type=float, default=-1, help='Starting timestep for finite interval guidance (non-negative, >= 0). Set to -1 to disable interval guidance.')
-    parser.add_argument('--t_to', type=float, default=-1, help='Ending timestep for finite interval guidance (must be > t_from). Set to -1 to disable interval guidance.')    
+    parser.add_argument('--guidance_scale', type=float, default=1.0, help='Scale factor for classifier-free guidance')    
+    parser.add_argument('--interval', type=float, nargs=2, default=[-1.0, -1.0], metavar=('t_from', 't_to'), help='Finite interval guidance. Use -1 -1 to disable.') 
+    # parser.add_argument('--t_from', type=float, default=-1, help='Starting timestep for finite interval guidance (non-negative, >= 0). Set to -1 to disable interval guidance.')
+    # parser.add_argument('--t_to', type=float, default=-1, help='Ending timestep for finite interval guidance (must be > t_from). Set to -1 to disable interval guidance.')    
     # which version of latnet model to choose
     parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")
     # ode/sde solver
