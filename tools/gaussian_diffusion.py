@@ -332,10 +332,7 @@ class GaussianDiffusion:
                 pred_xstart = process_xstart(
                     self._predict_xstart_from_v(x_t=x, t=t, v=model_output)
                 )
-            # else:
-            #     pred_xstart = process_xstart(
-            #         self._predict_xstart_from_u(x_t=x, t=t, u=model_output)
-                # )
+
             model_mean, _, _ = self.q_posterior_mean_variance(
                 x_start=pred_xstart, x_t=x, t=t
             )
@@ -366,14 +363,6 @@ class GaussianDiffusion:
             _extract_into_tensor(self.sqrt_alphas_cumprod, t, t.shape) * x_t
             - _extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, t.shape) * v
         )
-        
-    # def _predict_xstart_from_u(self, x_t, t, u):
-    #     assert x_t.shape == u.shape
-    #     return (x_t + u) / (2 * _extract_into_tensor(self.sqrt_alphas_cumprod, t, x_t.shape))
-    
-    # def _predict_xstart_from_u(self, x_t, t, u):
-    #     assert x_t.shape == u.shape
-    #     return (x_t - u) / (2 * _extract_into_tensor(self.sqrt_alphas_cumprod, t, x_t.shape))
             
     def _predict_xstart_from_xprev(self, x_t, t, xprev):
         assert x_t.shape == xprev.shape
