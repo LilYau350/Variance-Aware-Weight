@@ -320,7 +320,6 @@ class GaussianDiffusion:
         elif self.model_mean_type in [ModelMeanType.START_X, 
                                       ModelMeanType.EPSILON,
                                       ModelMeanType.VELOCITY,
-                                    #   ModelMeanType.UNRAVEL,
                                       ]:
             if self.model_mean_type == ModelMeanType.START_X:
                 pred_xstart = process_xstart(model_output)
