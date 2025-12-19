@@ -24,15 +24,6 @@ warnings.filterwarnings("ignore", message=".*flash attention.*")
 def modulate(x, shift, scale):
     return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)    
 
-def mean_square_error(cls_token, c_emb):
-    mse_loss = F.mse_loss(cls_token, c_emb)
-    return mse_loss
-
-def cosine_similarity(cls_token, c_emb):
-    cosine_sim = F.cosine_similarity(cls_token, c_emb, dim=-1)
-    return -cosine_sim.mean()
-
-
 def build_mlp(hidden_size, projector_dim, z_dim):
     return nn.Sequential(
                 nn.Linear(hidden_size, projector_dim),
@@ -41,8 +32,6 @@ def build_mlp(hidden_size, projector_dim, z_dim):
                 nn.SiLU(),
                 nn.Linear(projector_dim, z_dim),
             )
-
-
     
 #################################################################################
 #               Embedding Layers for Timesteps and Class Labels                 #
