@@ -863,7 +863,7 @@ class GaussianDiffusion:
 
             if self.args.learn_align:
                 assert self.gamma > 0, "Gamma must be greater than 0 for align loss"
-                proj_loss = cosine_similarity(features, sec_out)
+                proj_loss = -cosine_similarity(features, sec_out)
                 terms["reg"] = self.gamma * proj_loss                 
                                 
             if "vb" in terms:
@@ -1215,7 +1215,7 @@ class FlowMatching:
         
         if self.args.learn_align:
             assert self.gamma > 0, "Gamma must be greater than 0 for align loss"
-            proj_loss = cosine_similarity(features, sec_out)
+            proj_loss = -cosine_similarity(features, sec_out)
             terms["reg"] = self.gamma * proj_loss                  
     
         if self.args.learn_align:
