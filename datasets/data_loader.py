@@ -101,7 +101,7 @@ class LatentWithPixelDataset(Dataset):
 
         latent = torch.tensor(latent.copy(), dtype=torch.float32)
         pixel = torch.tensor(pixel.copy(), dtype=torch.float32)
-
+        label = torch.tensor(label.copy(), dtype=torch.long)
         return latent, pixel, label
     
 
