@@ -198,7 +198,7 @@ class UViT(nn.Module):
     def no_weight_decay(self):
         return {'pos_embed'}
 
-    def forward(self, x, timesteps, y=None):
+    def forward(self, x, timesteps, y=None, **kwargs):
         x = self.patch_embed(x)
         B, L, D = x.shape
 
