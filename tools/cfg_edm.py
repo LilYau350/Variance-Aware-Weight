@@ -75,7 +75,7 @@ class Net(torch.nn.Module):
             assert F_x.dtype == dtype
 
             if self.pred_type == 'EPSILON':
-                F_x = self.apply(F_x, guidance_scale)      
+                F_x = self.apply_cfg(F_x, guidance_scale)      
                 c_skip = 1
                 c_out = -sigma
                 D_x = c_skip * x + c_out * F_x[:, :self.img_channels].to(torch.float32)
@@ -83,10 +83,10 @@ class Net(torch.nn.Module):
             elif self.pred_type == 'START_X':
                 # D_x = F_x
                 # D_x = self.apply(D_x, guidance_scale)     
-                D_x = self.apply(F_x, guidance_scale)
+                D_x = self.apply_cfg(F_x, guidance_scale)
                         
             elif self.pred_type == 'VELOCITY':
-                F_x = self.apply(F_x, guidance_scale)         
+                F_x = self.apply_cfg(F_x, guidance_scale)         
                 # v = sqrt_alpha_bar * eps - sqrt_one_minus_alpha_bar * x_0
                 c_skip = c_in ** 2  # \bar{\alpha}_t ** 2
                 c_out = -sigma * c_in  # -\sqrt{1 - \bar{\alpha}_t}
@@ -97,7 +97,7 @@ class Net(torch.nn.Module):
 
         return D_x
     
-    def apply(self, tensor, guidance_scale):
+    def apply_cfg(self, tensor, guidance_scale):
         if not float_equal(guidance_scale, 1.0):
             cond, uncond = torch.split(tensor, len(tensor) // 2, dim=0)
             cond = uncond + guidance_scale * (cond - uncond)
