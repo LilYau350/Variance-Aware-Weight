@@ -94,7 +94,7 @@ def load_imagenet(input, image_size, batch_size):
 
 def compress_batch(images, device, vae):
     images = images.to(device)
-    with torch.no_grad():
+    with torch.no_grad(), torch.cuda.amp.autocast():
         latent_dist = vae.encode(images).latent_dist
         latents = torch.cat([latent_dist.mean, latent_dist.std], dim=1)
     return latents
@@ -164,4 +164,5 @@ if __name__ == "__main__":
     with h5py.File(h5_file, 'w') as f:
         save_compressed_latents(train_loader, f, "train", device, vae, args.save_pixels)
         save_compressed_latents(val_loader, f, "val", device, vae, args.save_pixels)
+
 
