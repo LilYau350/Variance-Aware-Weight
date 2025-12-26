@@ -15,7 +15,8 @@ from tools.nn import mean_flat
 from tools.losses import normal_kl, discretized_gaussian_log_likelihood
 from tools import logger
 import torch.nn.functional as F
-
+from tools.utils import *
+import torch.nn as nn
 
 def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
     """
@@ -1228,18 +1229,18 @@ class FlowMatching:
     #sampling
     def forward_with_cfg(self, model, x, t_in, guidance_scale, **model_kwargs):
         t = t_in.view(x.shape[0]) # make sure the shape fo t inputs mdoel is [batch_dim]
-        raw_output= model(x, t, **model_kwargs)
-        if isinstance(raw_output, tuple):
-            model_output = raw_output[0]
-        else:
-            model_output = raw_output
-        guidance_scale = guidance_scale(t_in.mean().item()) if callable(guidance_scale) else guidance_scale
-        if not self.float_equal(guidance_scale, 1.0):
-            cond, uncond = th.split(model_output, len(model_output) // 2, dim=0)
-            cond = uncond + guidance_scale * (cond - uncond)
-            model_output = th.cat([cond, cond], dim=0)
-        # convert to score or vector field
-        return model_output #self.convert_model_output(model_output, x, t_in)
+        with torch.cuda.amp.autocast(enabled=self.args.amp):
+            raw_output= model(x, t, **model_kwargs)
+            if isinstance(raw_output, tuple):
+                model_output = raw_output[0]
+            else:
+                model_output = raw_output
+            guidance_scale = guidance_scale(t_in.mean().item()) if callable(guidance_scale) else guidance_scale
+            if not self.float_equal(guidance_scale, 1.0):
+                cond, uncond = th.split(model_output, len(model_output) // 2, dim=0)
+                cond = uncond + guidance_scale * (cond - uncond)
+                model_output = th.cat([cond, cond], dim=0)
+        return model_output
 
     def ode_sample(self, model, noise, device, num_steps=50, solver='dopri5', guidance_scale=1.0, **model_kwargs):
         timesteps = th.linspace(1.0, 0.0, num_steps, device=device)
