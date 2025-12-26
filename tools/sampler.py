@@ -60,7 +60,11 @@ class Sampler:
         self.model = eval_model
         self.diffusion = diffusion      
         self.classifier = classifier
-
+        self.vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{self.args.vae}", local_files_only=True).to(self.device) if self.args.in_chans == 4 else None
+        if self.vae is not None:
+            self.vae.eval()
+            self.vae.requires_grad_(False)
+            
     def _model_fn(self, x, t, y=None):
         return self.model(x, t, y if self.args.class_cond else None)
     
@@ -75,8 +79,6 @@ class Sampler:
 
         if progress_bar and dist_util.is_main_process():
             pbar = tqdm(total=num_samples, desc="Generating Samples (DDIM)")
-            
-        vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{self.args.vae}", local_files_only=True).to(self.device) if self.args.in_chans == 4 else None
         
         while len(all_samples) * sample_size < num_samples:
             classes = self._get_y_cond(sample_size, num_classes)
@@ -87,7 +89,7 @@ class Sampler:
                 model_kwargs={"y": classes} if self.args.class_cond else {},
                 cond_fn=(lambda x, t, y: self.classifier.cond_fn(x, t, y, self.args.guidance_scale)) if self.classifier else None,
             )
-            sample = self._process_sample(sample, vae)
+            sample = self._process_sample(sample)
 
             self._gather_samples(all_samples, all_labels, sample, classes, world_size)
 
@@ -108,7 +110,6 @@ class Sampler:
         if progress_bar and dist_util.is_main_process():
             pbar = tqdm(total=num_samples, desc=f"Generating Samples ({self.args.solver.capitalize()})")
 
-        vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{self.args.vae}", local_files_only=True).to(self.device) if self.args.in_chans == 4 else None
         net = Net(model=self.model, img_channels=self.args.in_chans, img_resolution=image_size, label_dim=num_classes,
                   noise_schedule=self.args.path_type, amp=self.args.amp, pred_type=self.args.mean_type).to(self.device)
 
@@ -123,7 +124,7 @@ class Sampler:
                                       discretization=self.args.discretization, schedule=self.args.schedule, scaling=self.args.scaling,
                                       class_labels=class_labels, guidance_scale=guidance_scale,)
             
-            sample = self._process_sample(sample, vae)
+            sample = self._process_sample(sample)
             self._gather_samples(all_samples, all_labels, sample, class_labels, world_size)
 
             if dist_util.is_main_process() and progress_bar:
@@ -143,9 +144,6 @@ class Sampler:
         if progress_bar and dist_util.is_main_process():
             pbar = tqdm(total=num_samples, desc=f"Generating Samples ({self.args.solver.capitalize()})")
 
-        vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{self.args.vae}", local_files_only=True).to(self.device) if self.args.in_chans == 4 else None
-        
-
         while len(all_samples) * sample_size < num_samples:
             y_cond = self._get_y_cond(sample_size, num_classes)
             z = torch.randn([sample_size, self.args.in_chans, image_size, image_size], device=self.device)
@@ -156,7 +154,7 @@ class Sampler:
             sample = self.diffusion.sample(self.model, z, self.device, num_steps=self.args.sample_steps, solver=self.args.solver,
                                            guidance_scale=guidance_scale, y=class_labels)
             
-            sample = self._process_sample(sample, vae)
+            sample = self._process_sample(sample)
             self._gather_samples(all_samples, all_labels, sample, class_labels, world_size)
 
             if dist_util.is_main_process() and progress_bar:
@@ -204,13 +202,14 @@ class Sampler:
             return lambda t: guidance_scale if (t_from <= t < t_to) else 1.0
         return lambda t: guidance_scale
 
-    def _process_sample(self, sample, vae):
+    def _process_sample(self, sample):
         if not float_equal(self.args.guidance_scale, 1.0) and self.args.solver != 'ddim':
             sample, _ = sample.chunk(2, dim=0) # Remove null class samples       
         """Process and decode sample if using VAE."""
-        if vae:
+        if self.vae is not None:
+            with torch.no_grad(), torch.cuda.amp.autocast():
             # Encoded with scale factor 0.18215. Decode by dividing by it for accurate reconstruction and to avoid FID errors.
-            sample = vae.decode(sample.float() / self.args.latent_scale).sample
+                sample = self.vae.decode(sample / self.args.latent_scale).sample
         return self._inverse_normalize(sample)
     
     def _inverse_normalize(self, sample):
