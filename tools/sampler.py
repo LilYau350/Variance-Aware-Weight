@@ -208,7 +208,8 @@ class Sampler:
         """Process and decode sample if using VAE."""
         if self.vae is not None:
             with torch.no_grad(), torch.cuda.amp.autocast():
-            # Encoded with scale factor 0.18215. Decode by dividing by it for accurate reconstruction and to avoid FID errors.
+                sample = sample.to(dtype=self.vae.dtype,)
+                # Encoded with scale factor 0.18215. Decode by dividing by it for accurate reconstruction and to avoid FID errors.
                 sample = self.vae.decode(sample / self.args.latent_scale).sample
         return self._inverse_normalize(sample)
     
@@ -230,4 +231,5 @@ class Sampler:
             
         else:
             raise ValueError(f"Unsupported model_mode: {self.args.model_mode}")
+
 
