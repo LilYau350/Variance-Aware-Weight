@@ -773,7 +773,14 @@ class GaussianDiffusion:
         output = th.where((t == 0), decoder_nll, kl)
         return {"output": output, "pred_xstart": out["pred_xstart"]}
 
-
+    def sample_t(self, x_start):
+        if self.args.time_dist[0] == 'uniform':
+            t = th.randint(0, self.num_timesteps, (x_start.shape[0],), device=x_start.device)
+        else:
+            raise NotImplementedError(f"Unknown time_dist: {self.args.time_dist}")
+            
+        return t
+    
     def training_losses(self, model, x_start, features=None, t=None, model_kwargs=None, noise=None):
         """
         Compute training losses for a single timestep.
@@ -792,7 +799,7 @@ class GaussianDiffusion:
         if noise is None:
             noise = th.randn_like(x_start)
         if t is None:
-            t = th.randint(0, self.num_timesteps, (x_start.shape[0],), device=x_start.device)
+            t = self.sample_t(x_start)
 
         x_t = self.q_sample(x_start, t, noise=noise)
 
@@ -1157,15 +1164,15 @@ class FlowMatching:
         return score
 
     def sample_t(self, x_start):
-        if self.time_dist[0] == 'uniform':
+        if self.args.time_dist[0] == 'uniform':
             t = th.rand(x_start.shape[0], device=x_start.device)
-        elif self.time_dist[0] == 'lognorm':
+        elif self.args.time_dist[0] == 'lognorm':
             # logit-normal: z ~ N(mu, sigma^2), t = sigmoid(z)
-            mu, sigma = float(self.time_dist[-2]), float(self.time_dist[-1])
+            mu, sigma = float(self.args.time_dist[-2]), float(self.args.time_dist[-1])
             normal_samples = th.randn(x_start.shape[0], device=x_start.device) * sigma + mu
             t = th.sigmoid(normal_samples)
         else:
-            raise NotImplementedError(f"Unknown time_dist: {self.time_dist}")
+            raise NotImplementedError(f"Unknown time_dist: {self.args.time_dist}")
             
         return t
     
