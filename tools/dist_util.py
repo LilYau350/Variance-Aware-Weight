@@ -58,7 +58,7 @@ def cleanup_dist():
     """
     Cleanup a distributed process group.
     """
-    if dist.is_initialized():
+    if dist.is_available() and dist.is_initialized():
         dist.destroy_process_group()
         
 def dev():
