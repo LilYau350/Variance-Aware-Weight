@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader, Dataset, SubsetRandomSampler
 import torchvision.datasets as datasets
 import torch.distributed as dist
 import h5py
-from tools.dist_util import is_main_process
+from tools.dist_util import is_main_process, dist_barrier
 
 
 # Helper functions for cropping
@@ -102,6 +102,7 @@ class LatentWithPixelDataset(Dataset):
         latent = torch.tensor(latent.copy(), dtype=torch.float32)
         pixel = torch.tensor(pixel.copy(), dtype=torch.float32)
         label = torch.tensor(label.copy(), dtype=torch.long)
+
         return latent, pixel, label
     
 
@@ -121,9 +122,8 @@ def load_cifar10(data_dir, image_size, random_crop, random_flip,):
         train_dataset = datasets.CIFAR10(root=data_dir, train=True, download=True, transform=transform)
         test_dataset = datasets.CIFAR10(root=data_dir, train=False, download=True, transform=transform)
         
-    if dist.is_initialized():
-        dist.barrier()
-
+    dist_barrier()
+    
     train_dataset = datasets.CIFAR10(root=data_dir, train=True, download=False, transform=transform)
     test_dataset = datasets.CIFAR10(root=data_dir, train=False, download=False, transform=transform)    
     
