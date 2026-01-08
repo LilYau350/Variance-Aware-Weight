@@ -112,33 +112,112 @@ def load_encoders(enc_type, device, resolution=256):
             encoder.eval()
         
         elif encoder_type == 'mae':
-            from encoders.mae_vit import vit_large_patch16
+            # MAE https://github.com/facebookresearch/mae
+            from encoders.mae_vit import vit_base_patch16, vit_large_patch16, vit_huge_patch14
             import timm
+            import os
+            import torch
+
             kwargs = dict(img_size=256)
-            encoder = vit_large_patch16(**kwargs).to(device)
-            with open(f"ckpts/mae_vit{model_config}.pth", "rb") as f:
-                state_dict = torch.load(f)
+
+            if model_config == 'b':
+                encoder = vit_base_patch16(**kwargs).to(device)
+                url = "https://dl.fbaipublicfiles.com/mae/pretrain/mae_pretrain_vit_base.pth"
+            elif model_config == 'l':
+                encoder = vit_large_patch16(**kwargs).to(device)
+                url = "https://dl.fbaipublicfiles.com/mae/pretrain/mae_pretrain_vit_large.pth"
+            elif model_config == 'h':
+                encoder = vit_huge_patch14(**kwargs).to(device)
+                url = "https://dl.fbaipublicfiles.com/mae/pretrain/mae_pretrain_vit_huge.pth"
+            else:
+                raise ValueError(f"Unsupported MAE model_config: {model_config} (use b/l/h)")
+
+            os.makedirs("ckpts", exist_ok=True)
+            ckpt_path = os.path.join("ckpts", os.path.basename(url))
+
+            if os.path.exists(ckpt_path):
+                state_dict = torch.load(ckpt_path, map_location="cpu")
+            else:
+                state_dict = torch.hub.load_state_dict_from_url(
+                    url,
+                    model_dir="ckpts",
+                    map_location="cpu",
+                    check_hash=False
+                )
+
             if 'pos_embed' in state_dict["model"].keys():
                 state_dict["model"]['pos_embed'] = timm.layers.pos_embed.resample_abs_pos_embed(
                     state_dict["model"]['pos_embed'], [16, 16],
                 )
-            encoder.load_state_dict(state_dict["model"])
+
+            encoder.load_state_dict(state_dict["model"], strict=True)
 
             encoder.pos_embed.data = timm.layers.pos_embed.resample_abs_pos_embed(
                 encoder.pos_embed.data, [16, 16],
             )
 
+            encoder.eval()
+            
+        # elif encoder_type == 'jepa':
+        #     # JEPA https://github.com/facebookresearch/ijepa
+        #     # https://dl.fbaipublicfiles.com/ijepa/IN1K-vit.h.14-300e.pth.tar
+        #     from encoders.jepa import vit_huge
+        #     kwargs = dict(img_size=[224, 224], patch_size=14)
+        #     encoder = vit_huge(**kwargs).to(device)
+        #     with open(f"ckpts/ijepa_vit{model_config}.pth", "rb") as f:
+        #         state_dict = torch.load(f, map_location=device)
+        #     new_state_dict = dict()
+        #     for key, value in state_dict['encoder'].items():
+        #         new_state_dict[key[7:]] = value
+        #     encoder.load_state_dict(new_state_dict)
+        #     encoder.forward_features = encoder.forward
+
         elif encoder_type == 'jepa':
+            # JEPA https://github.com/facebookresearch/ijepa
             from encoders.jepa import vit_huge
+            import torch
+            import os
+
             kwargs = dict(img_size=[224, 224], patch_size=14)
-            encoder = vit_huge(**kwargs).to(device)
-            with open(f"ckpts/ijepa_vit{model_config}.pth", "rb") as f:
-                state_dict = torch.load(f, map_location=device)
-            new_state_dict = dict()
-            for key, value in state_dict['encoder'].items():
-                new_state_dict[key[7:]] = value
-            encoder.load_state_dict(new_state_dict)
+            
+            if model_config == 'h':
+                encoder = vit_huge(**kwargs).to(device)
+                url = "https://dl.fbaipublicfiles.com/ijepa/IN1K-vit.h.14-300e.pth.tar"
+            else:
+                raise ValueError(f"Unsupported JEPA model_config: {model_config} (only H supported)")
+            
+            os.makedirs("ckpts", exist_ok=True)
+            ckpt_path = os.path.join("ckpts", os.path.basename(url))
+
+            if os.path.exists(ckpt_path):
+                ckpt = torch.load(ckpt_path, map_location=device)
+            else:
+                ckpt = torch.hub.load_state_dict_from_url(
+                    url,
+                    model_dir="ckpts",
+                    map_location=device,
+                    check_hash=False
+                )
+
+            if isinstance(ckpt, dict) and 'state_dict' in ckpt:
+                raw_state = ckpt['state_dict']
+            elif isinstance(ckpt, dict) and 'encoder' in ckpt:
+                raw_state = ckpt['encoder']
+            else:
+                raw_state = ckpt
+
+            new_state_dict = {}
+            for k, v in raw_state.items():
+                if k.startswith('module.'):
+                    k = k[len('module.'):]
+                if k.startswith('encoder.'):
+                    k = k[len('encoder.'):]
+                new_state_dict[k] = v
+
+            encoder.load_state_dict(new_state_dict, strict=True)
             encoder.forward_features = encoder.forward
+            encoder.eval()
+
 
         encoders.append(encoder)
     
