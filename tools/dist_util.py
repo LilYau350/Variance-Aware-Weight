@@ -26,6 +26,10 @@ def is_main_process():
     # In a multi-card distributed environment, only the process with a rank of 0 is the master process
     return dist.get_rank() == 0
 
+def dist_barrier():
+    if dist.is_available() and dist.is_initialized():
+        dist.barrier()
+        
 def setup_dist():
     """
     Setup a distributed process group.
