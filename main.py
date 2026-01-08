@@ -396,7 +396,7 @@ def main():
         assert args.resume, "Evaluation requires a checkpoint path provided with --resume"   
         eval(args, **init_params)  
         
-    dist.barrier()
+    dist_util.dist_barrier()
     dist_util.cleanup_dist()
         
 if __name__ == "__main__":
