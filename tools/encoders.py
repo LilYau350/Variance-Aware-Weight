@@ -7,6 +7,7 @@ import timm
 from encoders import mocov3_vit
 import math
 import warnings
+from tools.dist_util import is_main_process, dist_barrier
 
 
 def fix_mocov3_state_dict(state_dict):
@@ -51,31 +52,66 @@ def load_encoders(enc_type, device, resolution=256):
 
         architectures.append(architecture)
         encoder_types.append(encoder_type)
+        
         if encoder_type == 'mocov3':
-            if architecture == 'vit':
-                if model_config == 's':
-                    encoder = mocov3_vit.vit_small()
-                elif model_config == 'b':
-                    encoder = mocov3_vit.vit_base()
-                elif model_config == 'l':
-                    encoder = mocov3_vit.vit_large()
-                ckpt = torch.load(f'./ckpts/mocov3_vit{model_config}.pth')
-                state_dict = fix_mocov3_state_dict(ckpt['state_dict'])
-                del encoder.head
-                encoder.load_state_dict(state_dict, strict=True)
-                encoder.head = torch.nn.Identity()
-            elif architecture == 'resnet':
+            import gdown, urllib.request
+
+            if architecture != 'vit':
                 raise NotImplementedError()
- 
+
+            if model_config == 'b':
+                encoder = mocov3_vit.vit_base()
+                url = "https://dl.fbaipublicfiles.com/moco-v3/vit-b-300ep/vit-b-300ep.pth.tar"
+                name = "mocov3_vit_base.pth.tar"
+            elif model_config == 'l':
+                encoder = mocov3_vit.vit_large()
+                url = "https://drive.google.com/file/d/1Foa2-FqhwIFYjcAAbY9sXyO-1Vwwx-_9/view?usp=sharing"
+                name = "mocov3_vit_large.pth.tar"
+            else:
+                raise ValueError(f"Unsupported MoCo v3 model_config: {model_config}.")
+
+            os.makedirs("ckpts", exist_ok=True)
+            ckpt_path = os.path.join("ckpts", name)
+            
+            if is_main_process():
+                if not os.path.exists(ckpt_path):
+                    if model_config == 'b':
+                        urllib.request.urlretrieve(url, ckpt_path)
+                    elif model_config == 'l':
+                        gdown.download(url, ckpt_path, quiet=False)
+            dist_barrier()
+            
+            ckpt = torch.load(ckpt_path, map_location="cpu")
+            raw_state = ckpt["state_dict"] if isinstance(ckpt, dict) and "state_dict" in ckpt else ckpt
+            state_dict = fix_mocov3_state_dict(raw_state)
+
+            del encoder.head
+            encoder.head = torch.nn.Identity()
+
+            encoder.load_state_dict(state_dict, strict=True)
             encoder = encoder.to(device)
             encoder.eval()
 
+
         elif 'dinov2' in encoder_type:
-            import timm
-            if 'reg' in encoder_type:
-                encoder = torch.hub.load('facebookresearch/dinov2', f'dinov2_vit{model_config}14_reg')
-            else:
-                encoder = torch.hub.load('facebookresearch/dinov2', f'dinov2_vit{model_config}14')
+            valid_models = {'s', 'b', 'l', 'g'}
+            if model_config not in valid_models:
+                raise ValueError(f"Unsupported DINOv2 model_config: '{model_config}'.")
+        
+            # if 'reg' in encoder_type:
+            #     encoder = torch.hub.load('facebookresearch/dinov2', f'dinov2_vit{model_config}14_reg')
+            # else:
+            #     encoder = torch.hub.load('facebookresearch/dinov2', f'dinov2_vit{model_config}14')
+            
+            hub_name = f'dinov2_vit{model_config}14_reg' if 'reg' in encoder_type else f'dinov2_vit{model_config}14'
+
+            # rank0 primes torch.hub cache (repo + weights), then others proceed
+            if is_main_process():
+                encoder = torch.hub.load('facebookresearch/dinov2', hub_name)
+            dist_barrier()
+            if not is_main_process():
+                encoder = torch.hub.load('facebookresearch/dinov2', hub_name)
+                
             del encoder.head
             patch_resolution = 16 * (resolution // 256)
             encoder.pos_embed.data = timm.layers.pos_embed.resample_abs_pos_embed(
@@ -84,29 +120,64 @@ def load_encoders(enc_type, device, resolution=256):
             encoder.head = torch.nn.Identity()
             encoder = encoder.to(device)
             encoder.eval()
-        
-        elif 'dinov1' == encoder_type:
-            import timm
+            
+        elif encoder_type == 'dinov1':
             from encoders import dinov1
-            encoder = dinov1.vit_base()
-            ckpt =  torch.load(f'./ckpts/dinov1_vit{model_config}.pth') 
-            if 'pos_embed' in ckpt.keys():
+            import urllib.request
+
+            if model_config == 's':
+                encoder = dinov1.vit_small().to(device)
+                url = "https://dl.fbaipublicfiles.com/dino/dino_deitsmall16_pretrain/dino_deitsmall16_pretrain.pth"
+                name = "dinov1_vit_small.pth"
+            elif model_config == 'b':
+                encoder = dinov1.vit_base().to(device)
+                url = "https://dl.fbaipublicfiles.com/dino/dino_vitbase16_pretrain/dino_vitbase16_pretrain.pth"
+                name = "dinov1_vit_base.pth"
+            else:
+                raise ValueError(f"Unsupported DINOv1 model_config: {model_config}.")
+
+            os.makedirs("ckpts", exist_ok=True)
+            ckpt_path = os.path.join("ckpts", name)
+            
+            if is_main_process():
+                if not os.path.exists(ckpt_path):
+                    urllib.request.urlretrieve(url, ckpt_path)
+            dist_barrier()
+            
+            ckpt = torch.load(ckpt_path, map_location="cpu")
+
+            if 'pos_embed' in ckpt:
                 ckpt['pos_embed'] = timm.layers.pos_embed.resample_abs_pos_embed(
                     ckpt['pos_embed'], [16, 16],
                 )
+
             del encoder.head
             encoder.head = torch.nn.Identity()
             encoder.load_state_dict(ckpt, strict=True)
-            encoder = encoder.to(device)
             encoder.forward_features = encoder.forward
             encoder.eval()
+
 
         elif encoder_type == 'clip':
             import clip
             from encoders.clip_vit import UpdatedVisionTransformer
-            encoder_ = clip.load(f"ViT-{model_config}/14", device='cpu')[0].visual
+            
+            if model_config == 'l':
+                model_name = "ViT-L/14"
+            else:
+                raise ValueError(f"Unsupported CLIP model_config: {model_config}.")
+                
+            # encoder_ = clip.load(model_name, device='cpu')[0].visual
+            
+            # rank0 primes CLIP cache, then others proceed
+            if is_main_process():
+                encoder_ = clip.load(model_name, device='cpu')[0].visual
+            dist_barrier()
+            if not is_main_process():
+                encoder_ = clip.load(model_name, device='cpu')[0].visual
+                
             encoder = UpdatedVisionTransformer(encoder_).to(device)
-             #.to(device)
+
             encoder.embed_dim = encoder.model.transformer.width
             encoder.forward_features = encoder.forward
             encoder.eval()
@@ -114,36 +185,34 @@ def load_encoders(enc_type, device, resolution=256):
         elif encoder_type == 'mae':
             # MAE https://github.com/facebookresearch/mae
             from encoders.mae_vit import vit_base_patch16, vit_large_patch16, vit_huge_patch14
-            import timm
-            import os
-            import torch
+            import urllib.request
 
             kwargs = dict(img_size=256)
 
             if model_config == 'b':
                 encoder = vit_base_patch16(**kwargs).to(device)
                 url = "https://dl.fbaipublicfiles.com/mae/pretrain/mae_pretrain_vit_base.pth"
+                name = "mae_vit_base.pth"
             elif model_config == 'l':
                 encoder = vit_large_patch16(**kwargs).to(device)
                 url = "https://dl.fbaipublicfiles.com/mae/pretrain/mae_pretrain_vit_large.pth"
+                name = "mae_vit_large.pth"
             elif model_config == 'h':
                 encoder = vit_huge_patch14(**kwargs).to(device)
                 url = "https://dl.fbaipublicfiles.com/mae/pretrain/mae_pretrain_vit_huge.pth"
+                name = "mae_vit_huge.pth"
             else:
-                raise ValueError(f"Unsupported MAE model_config: {model_config} (use b/l/h)")
+                raise ValueError(f"Unsupported MAE model_config: {model_config}.")
 
             os.makedirs("ckpts", exist_ok=True)
-            ckpt_path = os.path.join("ckpts", os.path.basename(url))
-
-            if os.path.exists(ckpt_path):
-                state_dict = torch.load(ckpt_path, map_location="cpu")
-            else:
-                state_dict = torch.hub.load_state_dict_from_url(
-                    url,
-                    model_dir="ckpts",
-                    map_location="cpu",
-                    check_hash=False
-                )
+            ckpt_path = os.path.join("ckpts", name)
+            
+            if is_main_process():
+                if not os.path.exists(ckpt_path):
+                    urllib.request.urlretrieve(url, ckpt_path)
+            dist_barrier()
+            
+            state_dict = torch.load(ckpt_path, map_location="cpu")
 
             if 'pos_embed' in state_dict["model"].keys():
                 state_dict["model"]['pos_embed'] = timm.layers.pos_embed.resample_abs_pos_embed(
@@ -157,67 +226,35 @@ def load_encoders(enc_type, device, resolution=256):
             )
 
             encoder.eval()
-            
-        # elif encoder_type == 'jepa':
-        #     # JEPA https://github.com/facebookresearch/ijepa
-        #     # https://dl.fbaipublicfiles.com/ijepa/IN1K-vit.h.14-300e.pth.tar
-        #     from encoders.jepa import vit_huge
-        #     kwargs = dict(img_size=[224, 224], patch_size=14)
-        #     encoder = vit_huge(**kwargs).to(device)
-        #     with open(f"ckpts/ijepa_vit{model_config}.pth", "rb") as f:
-        #         state_dict = torch.load(f, map_location=device)
-        #     new_state_dict = dict()
-        #     for key, value in state_dict['encoder'].items():
-        #         new_state_dict[key[7:]] = value
-        #     encoder.load_state_dict(new_state_dict)
-        #     encoder.forward_features = encoder.forward
 
         elif encoder_type == 'jepa':
             # JEPA https://github.com/facebookresearch/ijepa
             from encoders.jepa import vit_huge
-            import torch
-            import os
+            import urllib.request
 
-            kwargs = dict(img_size=[224, 224], patch_size=14)
-            
             if model_config == 'h':
-                encoder = vit_huge(**kwargs).to(device)
+                encoder = vit_huge(img_size=[224, 224], patch_size=14).to(device)
                 url = "https://dl.fbaipublicfiles.com/ijepa/IN1K-vit.h.14-300e.pth.tar"
+                name = "jepa_vit_huge.pth.tar"
             else:
-                raise ValueError(f"Unsupported JEPA model_config: {model_config} (only H supported)")
-            
+                raise ValueError(f"Unsupported JEPA model_config: {model_config}.")
+
             os.makedirs("ckpts", exist_ok=True)
-            ckpt_path = os.path.join("ckpts", os.path.basename(url))
+            ckpt_path = os.path.join("ckpts", name)
+            
+            if is_main_process():
+                if not os.path.exists(ckpt_path):
+                    urllib.request.urlretrieve(url, ckpt_path)
+            dist_barrier()
+            
+            ckpt = torch.load(ckpt_path, map_location="cpu")
 
-            if os.path.exists(ckpt_path):
-                ckpt = torch.load(ckpt_path, map_location=device)
-            else:
-                ckpt = torch.hub.load_state_dict_from_url(
-                    url,
-                    model_dir="ckpts",
-                    map_location=device,
-                    check_hash=False
-                )
+            raw = ckpt.get("state_dict", ckpt.get("encoder", ckpt)) if isinstance(ckpt, dict) else ckpt
+            enc = {k.removeprefix("module.").removeprefix("encoder."): v for k, v in raw.items()}
 
-            if isinstance(ckpt, dict) and 'state_dict' in ckpt:
-                raw_state = ckpt['state_dict']
-            elif isinstance(ckpt, dict) and 'encoder' in ckpt:
-                raw_state = ckpt['encoder']
-            else:
-                raw_state = ckpt
-
-            new_state_dict = {}
-            for k, v in raw_state.items():
-                if k.startswith('module.'):
-                    k = k[len('module.'):]
-                if k.startswith('encoder.'):
-                    k = k[len('encoder.'):]
-                new_state_dict[k] = v
-
-            encoder.load_state_dict(new_state_dict, strict=True)
+            encoder.load_state_dict(enc, strict=True)
             encoder.forward_features = encoder.forward
             encoder.eval()
-
 
         encoders.append(encoder)
     
