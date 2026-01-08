@@ -395,9 +395,9 @@ def main():
     if args.eval and not args.train:        
         assert args.resume, "Evaluation requires a checkpoint path provided with --resume"   
         eval(args, **init_params)  
-    if args.parallel:  
-        dist_util.dist_barrier()  
-        dist_util.cleanup_dist()
+        
+    dist.barrier()
+    dist_util.cleanup_dist()
         
 if __name__ == "__main__":
     main()                                                                                                          
