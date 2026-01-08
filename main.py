@@ -313,8 +313,7 @@ def train(args, **kwargs):
             if args.eval and args.eval_step > 0 and step % args.eval_step == 0 and step > 0:
                 eval(args, **{**kwargs, 'step': step})  
                 
-            if args.parallel: 
-                dist.barrier()                        
+            dist_util.dist_barrier()                         
 
 
 def init(args):
@@ -381,8 +380,7 @@ def init(args):
     else:
         ref_acts, ref_stats, ref_stats_spatial = None, None, None
 
-    if args.parallel:
-        dist.barrier()
+    dist_util.dist_barrier()  
 
     return {
         'device': device, 'train_loader': train_loader, 'val_loader': val_loader, 'model': model, 'ema_model': ema_model, 'checkpoint': checkpoint,
@@ -398,7 +396,7 @@ def main():
         assert args.resume, "Evaluation requires a checkpoint path provided with --resume"   
         eval(args, **init_params)  
     if args.parallel:  
-        dist.barrier()
+        dist_util.dist_barrier()  
         dist_util.cleanup_dist()
         
 if __name__ == "__main__":
