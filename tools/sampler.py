@@ -84,7 +84,7 @@ class Sampler:
             classes = self._get_y_cond(sample_size, num_classes)
             sample = self.diffusion.ddim_sample_loop(
                 self.model if not self.classifier else self._model_fn,
-                (sample_size, 3, image_size, image_size),
+                (sample_size, self.args.in_chans, image_size, image_size),
                 device=self.device,
                 model_kwargs={"y": classes} if self.args.class_cond else {},
                 cond_fn=(lambda x, t, y: self.classifier.cond_fn(x, t, y, self.args.guidance_scale)) if self.classifier else None,
@@ -231,5 +231,6 @@ class Sampler:
             
         else:
             raise ValueError(f"Unsupported model_mode: {self.args.model_mode}")
+
 
 
