@@ -282,7 +282,10 @@ class GaussianDiffusion:
 
         B, C = x.shape[:2]
         assert t.shape == (B,)
-        model_output = model(x, self._scale_timesteps(t), **model_kwargs)
+        
+        with torch.cuda.amp.autocast(enabled=self.args.amp):
+            model_output = model(x, self._scale_timesteps(t), **model_kwargs)
+            
         model_output = self.unpack_model_output(model_output)
         
         if self.model_var_type in [ModelVarType.LEARNED, ModelVarType.LEARNED_RANGE]:
