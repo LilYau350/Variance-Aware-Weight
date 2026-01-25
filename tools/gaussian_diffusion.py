@@ -184,6 +184,15 @@ class GaussianDiffusion:
             / (1.0 - self.alphas_cumprod)
         )
 
+    def unpack_model_output(self, raw_output):
+        """
+        Some models return (pred, aux) or (pred, aux1, aux2, ...).
+        For sampling, we only need the primary prediction tensor.
+        """
+        if isinstance(raw_output, tuple):
+            return raw_output[0]
+        return raw_output
+        
     def q_mean_variance(self, x_start, t):
         """
         Get the distribution q(x_t | x_0).
@@ -274,7 +283,8 @@ class GaussianDiffusion:
         B, C = x.shape[:2]
         assert t.shape == (B,)
         model_output = model(x, self._scale_timesteps(t), **model_kwargs)
-                
+        model_output = self.unpack_model_output(model_output)
+        
         if self.model_var_type in [ModelVarType.LEARNED, ModelVarType.LEARNED_RANGE]:
             assert model_output.shape == (B, C * 2, *x.shape[2:])
             model_output, model_var_values = th.split(model_output, C, dim=1)
