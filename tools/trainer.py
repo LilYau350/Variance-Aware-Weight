@@ -103,8 +103,8 @@ class Trainer:
                 mse_avg += loss_dict["mse"].mean().item() / grad_accumulation
             
             if self.args.learn_align:
-                if "patch" in loss_dict:
-                    patch_avg += loss_dict["align"].mean().item() / grad_accumulation
+                if "align" in loss_dict:
+                    align_avg += loss_dict["align"].mean().item() / grad_accumulation
 
             if (accumulation_step + 1) % grad_accumulation == 0:
                 if self.args.amp:
