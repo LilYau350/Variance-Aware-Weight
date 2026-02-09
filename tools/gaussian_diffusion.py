@@ -184,6 +184,7 @@ class GaussianDiffusion:
             / (1.0 - self.alphas_cumprod)
         )
 
+
     def unpack_model_output(self, raw_output):
         """
         Some models return (pred, aux) or (pred, aux1, aux2, ...).
@@ -192,7 +193,7 @@ class GaussianDiffusion:
         if isinstance(raw_output, tuple):
             return raw_output[0]
         return raw_output
-        
+    
     def q_mean_variance(self, x_start, t):
         """
         Get the distribution q(x_t | x_0).
@@ -839,7 +840,7 @@ class GaussianDiffusion:
         elif self.loss_type == LossType.MSE or self.loss_type == LossType.RESCALED_MSE:
             
             raw_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
-
+            
             if isinstance(raw_output, tuple):
                 model_output = raw_output[0]
                 sec_out = raw_output[1] if len(raw_output) > 1 else None
@@ -884,8 +885,9 @@ class GaussianDiffusion:
 
             if self.args.learn_align:
                 assert self.gamma > 0, "Gamma must be greater than 0 for align loss"
-                align_loss = compute_align_loss(features, sec_out)
-                terms["reg"] = self.gamma * align_loss                 
+                # proj_loss = cosine_similarity(features, sec_out)
+                align_loss = compute_align_loss(features, sec_out, self.args.align_type)
+                terms["reg"] = self.gamma * align_loss                
                                 
             if "vb" in terms:
                 terms["loss"] = terms["mse"] + terms["vb"]
@@ -973,6 +975,57 @@ class GaussianDiffusion:
             "mse": mse,
         }
 
+def compute_align_loss(target, output, type, temperature=0.1):
+    if type == "cosine":
+        return - F.cosine_similarity(target, output, dim=-1).mean()
+
+    elif type == "mse":
+        return F.mse_loss(output, target)
+
+    elif type == "mse_l2":
+        target = F.normalize(target, dim=-1)
+        output = F.normalize(output, dim=-1)
+        return F.mse_loss(output, target)
+        # return (output - target).pow(2).sum(dim=-1).mean()
+
+    elif type == "nt_xent":
+        assert temperature > 0, "temperature must be > 0"
+
+        N, T, D = target.shape
+        B = N * T
+
+        # [B, D]
+        target = target.reshape(B, D)
+        output = output.reshape(B, D)
+
+        # L2 normalize
+        target = F.normalize(target, dim=1)
+        output = F.normalize(output, dim=1)
+
+        # similarity matrix: [B, B]
+        logits = torch.matmul(output, target.T) / temperature
+
+        labels = torch.arange(B, device=logits.device)
+
+        # symmetric NT-Xent (optional but recommended)
+        loss_i = F.cross_entropy(logits, labels)
+        loss_j = F.cross_entropy(logits.T, labels)
+
+        return 0.5 * (loss_i + loss_j)
+
+    else:
+        raise ValueError(f"Unknown align loss type: {type}.")
+    
+def projection_loss(z, z_tilde):
+    z = F.normalize(z, dim=-1)
+    z_tilde = F.normalize(z_tilde, dim=-1)
+    proj_loss = -th.mean(th.sum(z * z_tilde, dim=-1))
+    return proj_loss
+
+
+def cosine_similarity(target, output):
+    cosine_sim = F.cosine_similarity(target, output, dim=-1)
+    return -cosine_sim.mean()
 
 def _extract_into_tensor(arr, timesteps, broadcast_shape):
     """
@@ -1005,6 +1058,7 @@ def concat_all_gather(tensor):
 
     output = th.cat(tensors_gather, dim=0)
     return output
+
 
 def compute_mse_loss_weight(model_mean_type, mse_loss_weight_type, t, alpha, sigma, p2_k=1.0, p2_gamma=1.0):
     snr = (alpha / sigma) ** 2
@@ -1064,59 +1118,6 @@ def compute_mse_loss_weight(model_mean_type, mse_loss_weight_type, t, alpha, sig
     mse_loss_weight[snr == 0] = 1.0  # Handle edge cases
     return mse_loss_weight
 
-
-def compute_align_loss(target, output, type, temperature=0.1):
-    if type == "cosine":
-        return - F.cosine_similarity(target, output, dim=-1).mean()
-
-    elif type == "mse":
-        return F.mse_loss(output, target)
-
-    elif type == "mse_l2":
-        target = F.normalize(target, dim=-1)
-        output = F.normalize(output, dim=-1)
-        return F.mse_loss(output, target)
-        # return (output - target).pow(2).sum(dim=-1).mean()
-
-    elif type == "nt_xent":
-        assert temperature > 0, "temperature must be > 0"
-
-        N, T, D = target.shape
-        B = N * T
-
-        # [B, D]
-        target = target.reshape(B, D)
-        output = output.reshape(B, D)
-
-        # L2 normalize
-        target = F.normalize(target, dim=1)
-        output = F.normalize(output, dim=1)
-
-        # similarity matrix: [B, B]
-        logits = torch.matmul(output, target.T) / temperature
-
-        labels = torch.arange(B, device=logits.device)
-
-        # symmetric NT-Xent (optional but recommended)
-        loss_i = F.cross_entropy(logits, labels)
-        loss_j = F.cross_entropy(logits.T, labels)
-
-        return 0.5 * (loss_i + loss_j)
-
-    else:
-        raise ValueError(f"Unknown align loss type: {type}.")
-    
-def projection_loss(z, z_tilde):
-    z = F.normalize(z, dim=-1)
-    z_tilde = F.normalize(z_tilde, dim=-1)
-    proj_loss = -th.mean(th.sum(z * z_tilde, dim=-1))
-    return proj_loss
-
-
-def cosine_similarity(target, output):
-    cosine_sim = F.cosine_similarity(target, output, dim=-1)
-    return -cosine_sim.mean()
-
             
 class FlowMatching:
     def __init__(
@@ -1139,7 +1140,10 @@ class FlowMatching:
         
         self.gamma=args.gamma
         self.learn_sigma=args.learn_sigma
-            
+        
+        # from tools.dv_loss import AlignWrapper
+        # self.align_wrapper = AlignWrapper(args, device) if args.learn_align else None
+        
     def expand_t_like_x(self, t, x):
         if t.dim() == 0:
             t = t.expand(x.shape[0])
@@ -1237,7 +1241,25 @@ class FlowMatching:
         alpha_t, sigma_t, _, _ = self.interpolant(t)
         x_t = alpha_t * x_start + sigma_t * noise
         return x_t
-    
+
+
+    def compute_target(self, x_start, noise, t, alpha_t=None, sigma_t=None, d_alpha_t=None, d_sigma_t=None):
+        if alpha_t is None or sigma_t is None or d_alpha_t is None or d_sigma_t is None:
+            alpha_t, sigma_t, d_alpha_t, d_sigma_t = self.interpolant(t)
+
+        alpha = self.expand_t_like_x(alpha_t, x_start)
+        sigma = self.expand_t_like_x(sigma_t, x_start)
+        d_alpha = self.expand_t_like_x(d_alpha_t, x_start)
+        d_sigma = self.expand_t_like_x(d_sigma_t, x_start)
+
+        return {
+            ModelMeanType.START_X: x_start,
+            ModelMeanType.EPSILON: noise,
+            ModelMeanType.VELOCITY: alpha * noise - sigma * x_start,
+            ModelMeanType.VECTOR: d_alpha * x_start + d_sigma * noise,
+            ModelMeanType.SCORE: -noise / sigma,
+        }[self.model_mean_type]
+
     #taining
     def training_losses(self, model, x_start, features=None, t=None, model_kwargs=None, noise=None):
         if model_kwargs is None:
@@ -1254,20 +1276,15 @@ class FlowMatching:
         terms = {}
         
         mse_loss_weight = compute_mse_loss_weight(self.model_mean_type, self.mse_loss_weight_type, t, alpha_t, sigma_t, self.p2_k, self.p2_gamma)
-        
-        target = {
-            ModelMeanType.START_X: x_start,
-            ModelMeanType.EPSILON: noise,
-            ModelMeanType.VELOCITY: alpha_t[:, None, None, None] * noise - sigma_t[:, None, None, None] * x_start,
-            ModelMeanType.VECTOR: d_alpha_t[:, None, None, None] * x_start + d_sigma_t[:, None, None, None] * noise,
-            ModelMeanType.SCORE: - noise / sigma_t[:, None, None, None],
-        }[self.model_mean_type]
+                
+        target = self.compute_target(x_start, noise, t, alpha_t=alpha_t, sigma_t=sigma_t, d_alpha_t=d_alpha_t, d_sigma_t=d_sigma_t)
         
         raw_output = model(x_t, t, **model_kwargs)
 
         if isinstance(raw_output, tuple):
             model_output = raw_output[0]
             sec_out = raw_output[1] if len(raw_output) > 1 else None
+            thd_out = raw_output[2] if len(raw_output) > 2 else None
         else:
             model_output = raw_output
         
@@ -1275,20 +1292,23 @@ class FlowMatching:
 
         raw_mse = mean_flat((target - model_output) ** 2)
             
-        terms["mse"] = mse_loss_weight * raw_mse
+        terms["mse"] = mse_loss_weight * raw_mse 
         
         if self.args.learn_align:
             assert self.gamma > 0, "Gamma must be greater than 0 for align loss"
-            align_loss = compute_align_loss(features, sec_out)
-            terms["reg"] = self.gamma * align_loss                  
-    
+            # proj_loss = cosine_similarity(features, sec_out)
+            align_loss = compute_align_loss(features, sec_out, self.args.align_type)
+            terms["align"] = align_loss        
+                  
+     
         if self.args.learn_align:
-            terms["loss"] = terms["mse"] + terms["reg"]
+            terms["loss"] = terms["mse"] + self.gamma * terms["align"] 
         else:
             terms["loss"] = terms["mse"]
             
         return terms
-
+    
+    
     #sampling
     def forward_with_cfg(self, model, x, t_in, guidance_scale, **model_kwargs):
         t = t_in.view(x.shape[0]) # make sure the shape fo t inputs mdoel is [batch_dim]
@@ -1324,7 +1344,7 @@ class FlowMatching:
         return samples[-1]
     
     def compute_diffusion(self, t_cur):
-        return 2*self.interpolant(t_cur)[1] * self.interpolant(t_cur)[3]
+        return 2 * self.interpolant(t_cur)[1] * self.interpolant(t_cur)[3]
     
     def sde_sample(self, model, noise, device, num_steps=50, solver='heun', guidance_scale=1.0, **model_kwargs):
         """
