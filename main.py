@@ -208,14 +208,13 @@ def build_model(args):
                                        in_channels=args.in_chans, num_classes=args.num_classes) 
                
     elif "ViT" in args.model:
-        model = model_dict[args.model](image_size=args.image_size, patch_size=args.patch_size, in_channels=args.in_chans, num_classes=args.num_classes,
-                                       learn_sigma=args.learn_sigma,  learn_align=args.learn_align, z_dims=args.z_dims, 
-                                       class_dropout_prob=args.drop_label_prob)
+        model = model_dict[args.model](image_size=args.image_size, patch_size=args.patch_size, in_channels=args.in_chans, 
+                                       num_classes=args.num_classes, learn_sigma=args.learn_sigma, class_dropout_prob=args.drop_label_prob)
         
     elif "DiT" in args.model:
-        model = model_dict[args.model](image_size=args.image_size, patch_size=args.patch_size, in_channels=args.in_chans, num_classes=args.num_classes, 
-                                       learn_sigma=args.learn_sigma, learn_align=args.learn_align, encoder_depth=args.encoder_depth, 
-                                       class_dropout_prob=args.drop_label_prob)
+        model = model_dict[args.model](image_size=args.image_size, patch_size=args.patch_size, in_channels=args.in_chans, 
+                                       num_classes=args.num_classes, learn_sigma=args.learn_sigma, learn_align=args.learn_align, 
+                                       encoder_depth=args.encoder_depth, class_dropout_prob=args.drop_label_prob)
     
     return model
 
