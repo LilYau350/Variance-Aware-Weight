@@ -60,10 +60,12 @@ class Sampler:
         self.model = eval_model
         self.diffusion = diffusion      
         self.classifier = classifier
+        
         self.vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{self.args.vae}", local_files_only=True).to(self.device) if self.args.in_chans == 4 else None
         if self.vae is not None:
             self.vae.eval()
             self.vae.requires_grad_(False)
+            self.vae.to(memory_format=torch.channels_last)
             
     def _model_fn(self, x, t, y=None):
         return self.model(x, t, y if self.args.class_cond else None)
@@ -231,6 +233,4 @@ class Sampler:
             
         else:
             raise ValueError(f"Unsupported model_mode: {self.args.model_mode}")
-
-
 
