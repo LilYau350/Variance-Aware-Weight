@@ -887,12 +887,12 @@ class GaussianDiffusion:
                 assert self.gamma > 0, "Gamma must be greater than 0 for align loss"
                 # proj_loss = cosine_similarity(features, sec_out)
                 align_loss = compute_align_loss(features, sec_out, self.args.align_type)
-                terms["reg"] = self.gamma * align_loss                
+                terms["align"] = align_loss                
                                 
             if "vb" in terms:
                 terms["loss"] = terms["mse"] + terms["vb"]
             elif self.args.learn_align:
-                 terms["loss"] = terms["mse"] + terms["reg"]
+                 terms["loss"] = terms["mse"] + self.gamma * terms["align"]
             else:
                 terms["loss"] = terms["mse"]
         else:
@@ -1284,7 +1284,6 @@ class FlowMatching:
         if isinstance(raw_output, tuple):
             model_output = raw_output[0]
             sec_out = raw_output[1] if len(raw_output) > 1 else None
-            thd_out = raw_output[2] if len(raw_output) > 2 else None
         else:
             model_output = raw_output
         
@@ -1300,7 +1299,6 @@ class FlowMatching:
             align_loss = compute_align_loss(features, sec_out, self.args.align_type)
             terms["align"] = align_loss        
                   
-     
         if self.args.learn_align:
             terms["loss"] = terms["mse"] + self.gamma * terms["align"] 
         else:
