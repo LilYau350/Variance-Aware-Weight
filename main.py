@@ -29,7 +29,7 @@ warnings.filterwarnings("ignore")
 
 model_variants = [
     "UNet-32","ADM-32", "ADM-64", "ADM-128", "ADM-256", "ADM-512", "UNet-64", "LDM",
-    "ViT-S", "ViT-B", "ViT-L", "ViT-XL", "ViT-H",
+    "ViT-S", "ViT-B", "ViT-L", "ViT-XL",
     "DiT-S", "DiT-B", "DiT-L", "DiT-XL",
     "U-ViT-S", "U-ViT-S-D", "U-ViT-M", "U-ViT-L", "U-ViT-H"]
 
@@ -186,7 +186,7 @@ def build_model(args):
         "UNet-32": UNet_32,"ADM-32": ADM_32, "ADM-64": ADM_64, "ADM-128": ADM_128, 
         "ADM-256": ADM_256, "ADM-512": ADM_512, "UNet-64": UNet_64, "LDM": LDM,}
     vit_models = {
-        "ViT-S": ViT_S, "ViT-B": ViT_B, "ViT-L": ViT_L, "ViT-XL": ViT_XL, "ViT-H": ViT_H}
+        "ViT-S": ViT_S, "ViT-B": ViT_B, "ViT-L": ViT_L, "ViT-XL": ViT_XL,}
     dit_models = {
         "DiT-S": DiT_S, "DiT-B": DiT_B, "DiT-L": DiT_L, "DiT-XL": DiT_XL}
     uvit_models = {
