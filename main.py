@@ -5,9 +5,10 @@ import warnings
 import torch
 from tqdm import trange
 import torch.optim as optim
+from tools.utils import *
+from tools import dist_util
 import torch.distributed as dist
 from torch.utils.data import DistributedSampler
-from tools.utils import *
 from evaluations.evaluator import Evaluator
 import tensorflow.compat.v1 as tf  # type: ignore
 from tools.trainer import Trainer
@@ -23,13 +24,12 @@ from tools.gaussian_diffusion import (
     ModelVarType,
     LossType
 )
-
 warnings.filterwarnings("ignore")
 
 
 model_variants = [
     "UNet-32","ADM-32", "ADM-64", "ADM-128", "ADM-256", "ADM-512", "UNet-64", "LDM",
-    "ViT-S", "ViT-B", "ViT-L", "ViT-XL",
+    "ViT-S", "ViT-B", "ViT-L", "ViT-XL", "ViT-H",
     "DiT-S", "DiT-B", "DiT-L", "DiT-XL",
     "U-ViT-S", "U-ViT-S-D", "U-ViT-M", "U-ViT-L", "U-ViT-H"]
 
@@ -48,17 +48,17 @@ def parse_args():
     parser.add_argument("--model", type=str, default="ADM-32", choices=model_variants, help="Model variant to use")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
 
-
     # Gaussian Diffusion
     parser.add_argument("--model_mode",type=str,default="diffusion",choices=["diffusion", "flow"],
                                                     help="Choose diffusion mode: 'flow' for SDE/ODE-based modeling, 'diffusion' for DDPM-like modeling.")
-    parser.add_argument("--path_type", type=str, default='linear', choices=['linear', 'cosine'], help="Path type for flow matching and diffusion")  
+    # Flow matching
+    parser.add_argument("--path_type", type=str, default='linear', choices=['linear', 'cosine'], help="Path type for flow matching")    
+    parser.add_argument('--sampler_type', type=str, default='sde', choices=['sde', 'ode'], help='Type of flow matching sampler to use')   
     parser.add_argument('--time_dist', nargs='+', default=['uniform', -0.8, 0.8], help="Time sampling distribution for mean flow training: ['uniform'] or ['lognorm', mu, sigma]")
     
-    # Flow matching
-    parser.add_argument('--sampler_type', type=str, default='sde', choices=['sde', 'ode'], help='Type of flow matching sampler to use')   
     # Discrete Diffusion
     parser.add_argument("--diffusion_steps", type=int, default=1000, help="Number of diffusion steps")
+    
     # loss type for diffusion or flow matching
     parser.add_argument("--mean_type", type=str, default='EPSILON', choices=['PREVIOUS_X', 'START_X', 'EPSILON', 'VELOCITY', 'VECTOR', 'SCORE'], help="Predict variable")
     parser.add_argument("--var_type", type=str, default='FIXED_LARGE', choices=['FIXED_LARGE', 'FIXED_SMALL', 'LEARNED', 'LEARNED_RANGE'], help="Variance type")
@@ -67,39 +67,43 @@ def parse_args():
     parser.add_argument("--gamma", type=float, default=0, help="Coefficient for loss regularization, e.g., projection loss")
     parser.add_argument("--p2_gamma", type=int, default=1, help="hyperparameter for P2 weight")
     parser.add_argument("--p2_k", type=int, default=1, help="hyperparameter for P2 weight")
-    
-    parser.add_argument("--enc-type", type=str, default="dinov2-vit-b", help="Encoder specification, e.g. 'dinov2-vit-b' or comma-separated list")
-    parser.add_argument("--encoder-depth", type=int, default=0, help="How many encoder blocks from SiT to expose to z-projection")
 
     # Training
     parser.add_argument("--num_workers", type=int, default=16, help="Number of workers for DataLoader")    
     parser.add_argument("--batch_size", type=int, default=128, help="Batch size for training")    
     parser.add_argument("--total_steps", type=int, default=400000, help="Total training steps") 
-    parser.add_argument("--ema_decay", type=float, default=0.9999, help="EMA decay rate")        
+    parser.add_argument("--ema_decay", type=float, default=0.9999, help="EMA decay rate")      
     parser.add_argument("--class_cond", default=False, type=str2bool, help="Set class_cond to enable class-conditional generation.")
-    parser.add_argument("--learn_sigma", default=False, type=str2bool, help="Set learn_sigma to enable learn distribution sigma.")   
-    parser.add_argument("--learn_align", default=False, type=str2bool, help="Set learn_align to make representation align.")  
+    parser.add_argument("--learn_sigma", default=False, type=str2bool, help="Set learn_sigma to enable learn distribution sigma.")    
+    parser.add_argument("--learn_align", default=False, type=str2bool, help="Set learn_align to make representation align.") 
+    parser.add_argument("--align_type", type=str, default="mse", choices=["cosine", "nt_xent", "mse_l2", "mse"], help="Alignment loss type (default: mse)")
+    parser.add_argument("--enc-type", type=str, default="dinov2-vit-b", help="Encoder specification, e.g. 'dinov2-vit-b' or comma-separated list")
+    parser.add_argument("--encoder_depth", type=int, default=0, help="How many encoder blocks from DiT to expose to z-projection")
+    parser.add_argument("--z_dims", type=int, default=768, help="How much feature dimension algin wtih teacher encoder")
+    
     # Adam settings
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     parser.add_argument('--betas', type=float, nargs=2, default=(0.9, 0.999), help='Beta values for optimization')
     parser.add_argument("--weight_decay", type=float, default=0.0, help="Weight decay for the optimizer")
     parser.add_argument("--eps", type=float, default=1e-8, help="eps for the optimizer")
+    
     # CFG training
     parser.add_argument('--drop_label_prob', type=float, default=0.0, help='Probability of dropping labels for classifier-free guidance')    
     # Sampling latnet
     parser.add_argument("--latent_scale", type=float, default=0.18215, help="scaling factor for latent sample normalization. (0.18215 for unit variance)")
+    
     # Training tircks
-    parser.add_argument("--warmup_steps", type=int, default=5000, help="Learning rate warmup")    
+    parser.add_argument("--warmup_steps", type=int, default=0, help="Learning rate warmup")    
     parser.add_argument("--final_lr", type=float, default=0.0, help="Final learning rate")
     parser.add_argument("--grad_clip", type=float, default=None, help="Gradient norm clipping")
-    parser.add_argument("--dropout", type=float, default=0.1, help='Dropout rate of resblock')
-    parser.add_argument("--cosine_decay", default=True, type=str2bool, help="Whether to use cosine learning rate decay")
+    parser.add_argument("--dropout", type=float, default=0.0, help='Dropout rate of resblock')
+    parser.add_argument("--cosine_decay", default=False, type=str2bool, help="Whether to use cosine learning rate decay")
+
     # DDP nad mixed precision training
     parser.add_argument("--parallel", default=False, type=str2bool, help="Use multi-GPU training")
     parser.add_argument('--amp', default=True, type=str2bool, help='Use AMP for mixed precision training')
     parser.add_argument('--grad_accumulation', type=int, default=1, help='Number of gradient accumulation steps (default: 1, no accumulation)')
     parser.add_argument('--resume', type=str, default=None, help='Path to the checkpoint to resume from')   
-
 
     # Logging & Sampling
     parser.add_argument("--logdir", type=str, default='./logs', help="Log directory")
@@ -109,21 +113,17 @@ def parse_args():
     parser.add_argument("--class_labels", type=int, nargs="+", default=None, help="Specify the class labels used for sampling, e.g., --class_labels 207 360 387") 
     parser.add_argument("--use_classifier", type=str, default=None, help="Path to the pre-trained classifier model")
     # cfg and limited interval guidance
-    parser.add_argument('--guidance_scale', type=float, default=1.0, help='Scale factor for classifier-free guidance')    
-    parser.add_argument('--interval', type=float, nargs=2, default=[-1.0, -1.0], metavar=('t_from', 't_to'), help='Finite interval guidance. Use -1 -1 to disable.') 
-    # parser.add_argument('--t_from', type=float, default=-1, help='Starting timestep for finite interval guidance (non-negative, >= 0). Set to -1 to disable interval guidance.')
-    # parser.add_argument('--t_to', type=float, default=-1, help='Ending timestep for finite interval guidance (must be > t_from). Set to -1 to disable interval guidance.')    
+    parser.add_argument('--guidance_scale', type=float, default=1.0, help='Scale factor for classifier-free guidance')       
+    parser.add_argument('--interval', type=float, nargs=2, default=[-1.0, -1.0], metavar=('t_from', 't_to'), help='Finite interval guidance. Use -1 -1 to disable.')    
+
     # which version of latnet model to choose
     parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")
     # ode/sde solver
     parser.add_argument("--solver", type=str, default='heun', help="Choose sampler 'ddim', 'euler' or 'heun', 'heun2', 'dopri5'")
-    parser.add_argument("--atol", type=float, default=1e-6, help="Absolute tolerance")
-    parser.add_argument("--rtol", type=float, default=1e-3, help="Relative tolerance")
     # edm sampler
     parser.add_argument('--discretization', type=str, default='edm', choices=['vp', 've', 'iddpm', 'edm'], help='Discretization method for edm solver.')
     parser.add_argument('--schedule', type=str, default='linear', choices=['vp', 've', 'linear'], help='Noise schedule for edm sampling.')
     parser.add_argument('--scaling', type=str, default='none', choices=['vp', 'none'], help='Scaling strategy for model output in edm.')
-
 
     # Evaluation
     parser.add_argument("--save_step", type=int, default=100000, help="Frequency of saving checkpoints, 0 to disable during training")
@@ -145,8 +145,6 @@ def build_dataset(args):
         train_loader, test_loader = load_dataset(
             args.data_dir,  args.dataset, args.batch_size, image_size, num_workers=args.num_workers, shuffle=not args.parallel)
     elif args.dataset == 'ImageNet':
-        if args.image_size not in [64, 128, 256]:
-            raise ValueError("Image size for ImageNet must be one of [64, 128, 256]")
         image_size = args.image_size
         train_loader, test_loader = load_dataset(
             args.data_dir, args.dataset, args.batch_size, image_size, num_workers=args.num_workers, shuffle=not args.parallel)
@@ -162,7 +160,6 @@ def build_dataset(args):
         image_size = args.image_size or 32  # Assuming latent is 32x32x4
         train_loader, test_loader = load_dataset(
             args.data_dir, args.dataset, args.batch_size, image_size, num_workers=args.num_workers, shuffle=not args.parallel)
-        
     else:
         raise ValueError(f"Unsupported dataset: {args.dataset}")
 
@@ -189,7 +186,7 @@ def build_model(args):
         "UNet-32": UNet_32,"ADM-32": ADM_32, "ADM-64": ADM_64, "ADM-128": ADM_128, 
         "ADM-256": ADM_256, "ADM-512": ADM_512, "UNet-64": UNet_64, "LDM": LDM,}
     vit_models = {
-        "ViT-S": ViT_S, "ViT-B": ViT_B, "ViT-L": ViT_L, "ViT-XL": ViT_XL}
+        "ViT-S": ViT_S, "ViT-B": ViT_B, "ViT-L": ViT_L, "ViT-XL": ViT_XL, "ViT-H": ViT_H}
     dit_models = {
         "DiT-S": DiT_S, "DiT-B": DiT_B, "DiT-L": DiT_L, "DiT-XL": DiT_XL}
     uvit_models = {
@@ -211,14 +208,13 @@ def build_model(args):
                                        in_channels=args.in_chans, num_classes=args.num_classes) 
                
     elif "ViT" in args.model:
-        model = model_dict[args.model](image_size=args.image_size, patch_size=args.patch_size,
-                                       num_classes=args.num_classes, in_channels=args.in_chans,
-                                       learn_sigma=args.learn_sigma, drop_rate=args.dropout, 
-                                       drop_label_prob=args.drop_label_prob)
-
-    elif "DiT" in args.model:
         model = model_dict[args.model](image_size=args.image_size, patch_size=args.patch_size, in_channels=args.in_chans, num_classes=args.num_classes,
-                                       learn_sigma=args.learn_sigma, learn_align=args.learn_align, encoder_depth=args.encoder_depth,
+                                       learn_sigma=args.learn_sigma,  learn_align=args.learn_align, z_dims=args.z_dims, 
+                                       class_dropout_prob=args.drop_label_prob)
+        
+    elif "DiT" in args.model:
+        model = model_dict[args.model](image_size=args.image_size, patch_size=args.patch_size, in_channels=args.in_chans, num_classes=args.num_classes, 
+                                       learn_sigma=args.learn_sigma, learn_align=args.learn_align, encoder_depth=args.encoder_depth, 
                                        class_dropout_prob=args.drop_label_prob)
     
     return model
@@ -256,15 +252,21 @@ def build_diffusion(args, device, use_ddim=False):
         return FlowMatching(**flow_kwargs)
     
     else:
-        raise ValueError(f"Unsupported model_mode: {args.model_mode}")   
+        raise ValueError(f"Unsupported model_mode: {args.model_mode}")    
            
 def eval(args, **kwargs):
-    ema_model, val_loader, step = (kwargs['ema_model'], kwargs['val_loader'], kwargs['step'])
+    val_loader, step = (kwargs['val_loader'],  kwargs['step'])
+    
     # Evaluate net_model and ema_model
-    ema_is_score, ema_fid, ema_sfid, ema_pre, ema_rec = calculate_metrics(args, ema_model, **kwargs)
+    ema_is_score, ema_fid, ema_sfid, ema_pre, ema_rec = calculate_metrics(args, **kwargs)
     if dist_util.is_main_process():
-        print(f"Model(EMA): IS:{ema_is_score:.2f}, FID:{ema_fid:.2f}, sFID:{ema_sfid:.2f}, Pre:{ema_pre:.2f}, Rec:{ema_rec:.2f}")    
-            
+        print(f"Model(EMA): IS:{ema_is_score:.2f}, FID:{ema_fid:.2f}, sFID:{ema_sfid:.2f}, Pre:{ema_pre:.2f}, Rec:{ema_rec:.2f}")
+        
+    top1, top5 = None, None
+    # if args.learn_classify:
+    #     top1, top5 = eval_accuracy(args, val_loader, ema_model, kwargs['sample_diffusion'], kwargs['device'], desc="Val-Dataset", topk=(1,5))   
+    #     if dist_util.is_main_process():
+    #         print(f"Model(EMA): Top-1:{top1:.2f}%, Top-5:{top5:.2f}%")      
     metrics = {
         'IS (EMA)': ema_is_score,
         'FID (EMA)': ema_fid,
@@ -272,17 +274,21 @@ def eval(args, **kwargs):
         'Pre. (EMA)': ema_pre,
         'Rec. (EMA)': ema_rec,
     }
+    if top1 is not None and top5 is not None:
+        metrics['Top-1 (EMA)'] = top1
+        metrics['Top-5 (EMA)'] = top5
         
     #if dist_util.is_main_process():
     save_metrics_to_csv(args, metrics, step)
-
+            
+            
 def train(args, **kwargs):
-    model, ema_model, checkpoint, diffusion, sample_diffusion, train_loader, optimizer, scheduler, device = (
+    model, ema_model, checkpoint, diffusion, train_loader, sampler, optimizer, scheduler, device= (
         kwargs['model'], kwargs['ema_model'], kwargs['checkpoint'], 
-        kwargs['diffusion'], kwargs['sample_diffusion'], kwargs['train_loader'],
-        kwargs['optimizer'], kwargs['scheduler'], kwargs['device']
+        kwargs['diffusion'],  kwargs['train_loader'], kwargs['sampler'],
+        kwargs['optimizer'], kwargs['scheduler'], kwargs['device'],
     )
-    
+
     # model.train()
     model_size = sum(param.data.nelement() for param in model.parameters())
         
@@ -296,24 +302,25 @@ def train(args, **kwargs):
     # Start training
     with trange(start_step, args.total_steps, initial=start_step, total=args.total_steps, 
                 dynamic_ncols=True, disable=not dist_util.is_main_process()) as pbar:
-        trainer = Trainer(args, device, model, ema_model, optimizer, scheduler, diffusion, train_loader, start_step, pbar)
+        trainer = Trainer(args, device, model, ema_model, optimizer, scheduler, diffusion, train_loader, pbar)
         for step in range(start_step + 1, args.total_steps + 1):
             
-            loss = trainer.train_step(step)      
+            trainer.train_step(step)
+            
             # Sample and save images
             if args.sample_freq > 0 and step % args.sample_freq == 0:
-                generate_samples(args, step, device, ema_model, sample_diffusion, save_grid=True)
-    
+                # generate_samples(args, step, device, ema_model, sample_diffusion, save_grid=True)
+                generate_samples(args, step, sampler, save_grid=True)
+                
             # Save checkpoint
             if args.save_step > 0 and step % args.save_step == 0 and step > 0:
-                # if dist_util.is_main_process():
                 save_checkpoint(args, step, model, optimizer, ema_model=ema_model)  
         
             # Evaluate
             if args.eval and args.eval_step > 0 and step % args.eval_step == 0 and step > 0:
                 eval(args, **{**kwargs, 'step': step})  
                 
-            dist_util.dist_barrier()                         
+            dist_util.dist_barrier()                      
 
 
 def init(args):
@@ -324,9 +331,9 @@ def init(args):
     else:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-    generate_logdir(args)
+    generate_logdir(args)        
     set_random_seed(args, args.seed)
-    
+
     train_loader, val_loader = build_dataset(args)
     
     diffusion = build_diffusion(args, device, use_ddim=False)
@@ -346,6 +353,12 @@ def init(args):
         if args.parallel:
             model = DDP(model, device_ids=[local_rank], output_device=local_rank)
             ema_model = DDP(ema_model, device_ids=[local_rank], output_device=local_rank)
+            # model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True,)
+            # ema_model = DDP(ema_model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True,)
+            
+    classifier = Classifier(args, device, ema_model) if args.use_classifier else None
+    sampler = Sampler(args, device, ema_model, sample_diffusion, classifier=classifier)
+     
     if args.train:
         optimizer = optim.AdamW(model.parameters(), lr=args.lr, betas=args.betas, weight_decay=args.weight_decay, eps=args.eps)
         scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=get_lr_lambda(args))
@@ -366,27 +379,26 @@ def init(args):
     config = tf.ConfigProto(allow_soft_placement=True)
     config.gpu_options.allow_growth = True
     evaluator = Evaluator(tf.Session(config=config))
-
+    
     if dist_util.is_main_process():
         print("warming up TensorFlow...")
         # This will cause TF to print a bunch of verbose stuff now rather
         # than after the next print(), to help prevent confusion.
         evaluator.warmup()
-
         print("computing reference batch activations...")
         ref_acts = evaluator.read_activations(args.ref_batch)
         print("computing/reading reference batch statistics...")
         ref_stats, ref_stats_spatial = evaluator.read_statistics(args.ref_batch, ref_acts)
     else:
         ref_acts, ref_stats, ref_stats_spatial = None, None, None
-
-    dist_util.dist_barrier()  
+        
+    dist_util.dist_barrier()
 
     return {
-        'device': device, 'train_loader': train_loader, 'val_loader': val_loader, 'model': model, 'ema_model': ema_model, 'checkpoint': checkpoint,
-        'diffusion': diffusion, 'sample_diffusion': sample_diffusion, 'optimizer': optimizer, 'scheduler': scheduler,'evaluator': evaluator, 
-        'ref_acts': ref_acts, 'ref_stats': ref_stats, 'ref_stats_spatial': ref_stats_spatial, 'step': step }
-
+        'device': device, 'train_loader': train_loader, 'val_loader': val_loader, 'model': model, 'ema_model': ema_model, 
+        'checkpoint': checkpoint, 'diffusion': diffusion, 'sampler': sampler, 'optimizer': optimizer, 'scheduler': scheduler,
+        'evaluator': evaluator, 'ref_acts': ref_acts, 'ref_stats': ref_stats, 'ref_stats_spatial': ref_stats_spatial, 'step': step }
+        
 def main():
     args = parse_args()
     init_params = init(args)  
@@ -395,9 +407,8 @@ def main():
     if args.eval and not args.train:        
         assert args.resume, "Evaluation requires a checkpoint path provided with --resume"   
         eval(args, **init_params)  
-        
-    dist_util.dist_barrier()
-    dist_util.cleanup_dist()
+ 
+    dist_util.dist_barrier(); dist_util.cleanup_dist()
         
 if __name__ == "__main__":
     main()                                                                                                          
