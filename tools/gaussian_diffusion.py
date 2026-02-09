@@ -1141,9 +1141,6 @@ class FlowMatching:
         self.gamma=args.gamma
         self.learn_sigma=args.learn_sigma
         
-        # from tools.dv_loss import AlignWrapper
-        # self.align_wrapper = AlignWrapper(args, device) if args.learn_align else None
-        
     def expand_t_like_x(self, t, x):
         if t.dim() == 0:
             t = t.expand(x.shape[0])
