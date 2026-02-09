@@ -209,7 +209,8 @@ def build_model(args):
                
     elif "ViT" in args.model:
         model = model_dict[args.model](image_size=args.image_size, patch_size=args.patch_size, in_channels=args.in_chans, 
-                                       num_classes=args.num_classes, learn_sigma=args.learn_sigma, class_dropout_prob=args.drop_label_prob)
+                                       num_classes=args.num_classes, learn_sigma=args.learn_sigma, 
+                                       dropout=args.dropout, class_dropout_prob=args.drop_label_prob)
         
     elif "DiT" in args.model:
         model = model_dict[args.model](image_size=args.image_size, patch_size=args.patch_size, in_channels=args.in_chans, 
