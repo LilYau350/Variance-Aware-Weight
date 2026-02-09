@@ -884,8 +884,8 @@ class GaussianDiffusion:
 
             if self.args.learn_align:
                 assert self.gamma > 0, "Gamma must be greater than 0 for align loss"
-                proj_loss = cosine_similarity(features, sec_out)
-                terms["reg"] = self.gamma * proj_loss                 
+                align_loss = compute_align_loss(features, sec_out)
+                terms["reg"] = self.gamma * align_loss                 
                                 
             if "vb" in terms:
                 terms["loss"] = terms["mse"] + terms["vb"]
@@ -973,15 +973,6 @@ class GaussianDiffusion:
             "mse": mse,
         }
 
-# def projection_loss(z, z_tilde):
-#     z = F.normalize(z, dim=-1)
-#     z_tilde = F.normalize(z_tilde, dim=-1)
-#     proj_loss = -th.mean(th.sum(z * z_tilde, dim=-1))
-#     return proj_loss
-
-def cosine_similarity(target, output):
-    cosine_sim = F.cosine_similarity(target, output, dim=-1)
-    return -cosine_sim.mean()
 
 def _extract_into_tensor(arr, timesteps, broadcast_shape):
     """
@@ -1014,7 +1005,6 @@ def concat_all_gather(tensor):
 
     output = th.cat(tensors_gather, dim=0)
     return output
-
 
 def compute_mse_loss_weight(model_mean_type, mse_loss_weight_type, t, alpha, sigma, p2_k=1.0, p2_gamma=1.0):
     snr = (alpha / sigma) ** 2
@@ -1073,6 +1063,59 @@ def compute_mse_loss_weight(model_mean_type, mse_loss_weight_type, t, alpha, sig
 
     mse_loss_weight[snr == 0] = 1.0  # Handle edge cases
     return mse_loss_weight
+
+
+def compute_align_loss(target, output, type, temperature=0.1):
+    if type == "cosine":
+        return - F.cosine_similarity(target, output, dim=-1).mean()
+
+    elif type == "mse":
+        return F.mse_loss(output, target)
+
+    elif type == "mse_l2":
+        target = F.normalize(target, dim=-1)
+        output = F.normalize(output, dim=-1)
+        return F.mse_loss(output, target)
+        # return (output - target).pow(2).sum(dim=-1).mean()
+
+    elif type == "nt_xent":
+        assert temperature > 0, "temperature must be > 0"
+
+        N, T, D = target.shape
+        B = N * T
+
+        # [B, D]
+        target = target.reshape(B, D)
+        output = output.reshape(B, D)
+
+        # L2 normalize
+        target = F.normalize(target, dim=1)
+        output = F.normalize(output, dim=1)
+
+        # similarity matrix: [B, B]
+        logits = torch.matmul(output, target.T) / temperature
+
+        labels = torch.arange(B, device=logits.device)
+
+        # symmetric NT-Xent (optional but recommended)
+        loss_i = F.cross_entropy(logits, labels)
+        loss_j = F.cross_entropy(logits.T, labels)
+
+        return 0.5 * (loss_i + loss_j)
+
+    else:
+        raise ValueError(f"Unknown align loss type: {type}.")
+    
+def projection_loss(z, z_tilde):
+    z = F.normalize(z, dim=-1)
+    z_tilde = F.normalize(z_tilde, dim=-1)
+    proj_loss = -th.mean(th.sum(z * z_tilde, dim=-1))
+    return proj_loss
+
+
+def cosine_similarity(target, output):
+    cosine_sim = F.cosine_similarity(target, output, dim=-1)
+    return -cosine_sim.mean()
 
             
 class FlowMatching:
@@ -1236,8 +1279,8 @@ class FlowMatching:
         
         if self.args.learn_align:
             assert self.gamma > 0, "Gamma must be greater than 0 for align loss"
-            proj_loss = cosine_similarity(features, sec_out)
-            terms["reg"] = self.gamma * proj_loss                  
+            align_loss = compute_align_loss(features, sec_out)
+            terms["reg"] = self.gamma * align_loss                  
     
         if self.args.learn_align:
             terms["loss"] = terms["mse"] + terms["reg"]
