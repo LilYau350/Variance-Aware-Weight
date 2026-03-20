@@ -14,6 +14,7 @@ else:
         ATTENTION_MODE = 'xformers'
     except:
         ATTENTION_MODE = 'math'
+        
 print(f'attention mode is {ATTENTION_MODE}')
 
 
@@ -138,7 +139,7 @@ class PatchEmbed(nn.Module):
 class UViT(nn.Module):
     def __init__(self, image_size=224, patch_size=16, in_channels=3, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4.,
                  qkv_bias=False, qk_scale=None, norm_layer=nn.LayerNorm, mlp_time_embed=False, num_classes=-1,
-                 use_checkpoint=False, conv=True, skip=True):
+                 use_checkpoint=False, conv=True, skip=True, class_dropout_prob=0.0,):
         super().__init__()
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
         self.num_classes = num_classes
@@ -146,19 +147,22 @@ class UViT(nn.Module):
 
         self.patch_embed = PatchEmbed(patch_size=patch_size, in_channels=in_channels, embed_dim=embed_dim)
         num_patches = (image_size // patch_size) ** 2
-
+        
         self.time_embed = nn.Sequential(
             nn.Linear(embed_dim, 4 * embed_dim),
             nn.SiLU(),
             nn.Linear(4 * embed_dim, embed_dim),
         ) if mlp_time_embed else nn.Identity()
 
+        self.class_dropout_prob = class_dropout_prob
+        
         if self.num_classes > 0:
-            self.label_emb = nn.Embedding(self.num_classes, embed_dim)
+            self.label_emb = nn.Embedding(self.num_classes + int(self.class_dropout_prob > 0), embed_dim)
             self.extras = 2
         else:
             self.extras = 1
-
+            
+        
         self.pos_embed = nn.Parameter(torch.zeros(1, self.extras + num_patches, embed_dim))
 
         self.in_blocks = nn.ModuleList([
@@ -198,6 +202,21 @@ class UViT(nn.Module):
     def no_weight_decay(self):
         return {'pos_embed'}
 
+    def token_drop(self, labels, train=True,):
+        """
+        Randomly drop labels for classifier-free guidance during training.
+        Dropped labels are set to index == num_classes (the extra class token).
+        labels: LongTensor shape [B], values in [0, num_classes-1]
+        force_drop_ids: optional BoolTensor or ByteTensor shape [B] to force drop those entries
+        train: Bool, if True, apply label dropout, otherwise no dropout
+        """
+        
+        use_dropout = self.class_dropout_prob > 0
+        if train and use_dropout:
+            drop_ids = torch.rand(labels.shape[0], device=labels.device) < self.class_dropout_prob
+            labels = torch.where(drop_ids, self.num_classes, labels)
+        return labels
+    
     def forward(self, x, timesteps, y=None, **kwargs):
         x = self.patch_embed(x)
         B, L, D = x.shape
@@ -206,7 +225,8 @@ class UViT(nn.Module):
         time_token = time_token.unsqueeze(dim=1)
         x = torch.cat((time_token, x), dim=1)
         if y is not None:
-            label_emb = self.label_emb(y)
+            y_proc = self.token_drop(y, self.training)  # [N]               
+            label_emb = self.label_emb(y_proc) 
             label_emb = label_emb.unsqueeze(dim=1)
             x = torch.cat((label_emb, x), dim=1)
         x = x + self.pos_embed
