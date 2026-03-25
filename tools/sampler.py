@@ -164,17 +164,33 @@ class Sampler:
 
         return all_samples, all_labels
     
+    # def _get_y_cond(self, sample_size, num_classes):
+    #     y_cond = None  
+    #     if self.args.class_cond:
+    #         if self.args.class_labels is not None:  
+    #             assert len(self.args.class_labels) == sample_size, (f"Length of class_labels ({len(self.args.class_labels)}) must match sample_size ({sample_size})")
+    #             assert all(isinstance(x, int) and 0 <= x < num_classes for x in self.args.class_labels), (f"Class labels must be integers in [0, {num_classes})")
+    #             y_cond = torch.tensor(self.args.class_labels, device=self.device)
+    #         else:
+    #             y_cond = torch.randint(0, num_classes, (sample_size,), device=self.device)
+    #     return y_cond
+
     def _get_y_cond(self, sample_size, num_classes):
-        y_cond = None  
-        if self.args.class_cond:
-            if self.args.class_labels is not None:  
-                assert len(self.args.class_labels) == sample_size, (f"Length of class_labels ({len(self.args.class_labels)}) must match sample_size ({sample_size})")
-                assert all(isinstance(x, int) and 0 <= x < num_classes for x in self.args.class_labels), (f"Class labels must be integers in [0, {num_classes})")
-                y_cond = torch.tensor(self.args.class_labels, device=self.device)
-            else:
-                y_cond = torch.randint(0, num_classes, (sample_size,), device=self.device)
-        return y_cond
-        
+        if not self.args.class_cond:
+            return None
+    
+        labels = self.args.class_labels
+        if labels is None:
+            return torch.randint(0, num_classes, (sample_size,), device=self.device)
+    
+        assert all(isinstance(x, int) and 0 <= x < num_classes for x in labels), \
+            f"class_labels must be integers in [0, {num_classes})"
+        assert len(labels) <= sample_size, \
+            f"len(class_labels) must be <= sample_size ({sample_size})"
+    
+        labels = torch.tensor(labels, device=self.device, dtype=torch.long)
+        return labels[torch.randint(len(labels), (sample_size,), device=self.device)]
+    
     def _gather_samples(self, all_samples, all_labels, sample, labels, world_size):
         """Gather samples across devices if running in parallel."""
         if self.args.parallel:
