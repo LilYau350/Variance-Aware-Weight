@@ -1317,7 +1317,7 @@ class FlowMatching:
             if not self.float_equal(guidance_scale, 1.0):
                 cond, uncond = th.split(model_output, len(model_output) // 2, dim=0)
                 cond = uncond + guidance_scale * (cond - uncond)
-                model_output = th.cat([cond, cond], dim=0)
+                model_output = cond
         return model_output
 
     def ode_sample(self, model, noise, device, num_steps=50, solver='dopri5', guidance_scale=1.0, **model_kwargs):
