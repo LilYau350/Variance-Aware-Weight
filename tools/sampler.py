@@ -60,7 +60,6 @@ class Sampler:
         self.model = eval_model
         self.diffusion = diffusion      
         self.classifier = classifier
-        
         self.vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{self.args.vae}", local_files_only=True).to(self.device) if self.args.in_chans == 4 else None
         if self.vae is not None:
             self.vae.eval()
@@ -86,17 +85,18 @@ class Sampler:
             classes = self._get_y_cond(sample_size, num_classes)
             sample = self.diffusion.ddim_sample_loop(
                 self.model if not self.classifier else self._model_fn,
-                (sample_size, self.args.in_chans, image_size, image_size),
+                (sample_size, 3, image_size, image_size),
                 device=self.device,
                 model_kwargs={"y": classes} if self.args.class_cond else {},
                 cond_fn=(lambda x, t, y: self.classifier.cond_fn(x, t, y, self.args.guidance_scale)) if self.classifier else None,
             )
-            sample = self._process_sample(sample)
 
+            sample, _ = self._process_sample_label(sample)
             self._gather_samples(all_samples, all_labels, sample, classes, world_size)
 
             if dist_util.is_main_process() and progress_bar:
-                pbar.update(sample_size * world_size)
+                # pbar.update(sample_size * world_size)
+                pbar.update(sample.shape[0] * world_size)
 
         return all_samples, all_labels
 
@@ -126,11 +126,12 @@ class Sampler:
                                       discretization=self.args.discretization, schedule=self.args.schedule, scaling=self.args.scaling,
                                       class_labels=class_labels, guidance_scale=guidance_scale,)
             
-            sample = self._process_sample(sample)
+            sample, class_labels = self._process_sample_label(sample, class_labels)
             self._gather_samples(all_samples, all_labels, sample, class_labels, world_size)
 
             if dist_util.is_main_process() and progress_bar:
-                pbar.update(sample_size * world_size)
+                # pbar.update(sample_size * world_size)
+                pbar.update(sample.shape[0] * world_size)
 
         return all_samples, all_labels
 
@@ -156,41 +157,31 @@ class Sampler:
             sample = self.diffusion.sample(self.model, z, self.device, num_steps=self.args.sample_steps, solver=self.args.solver,
                                            guidance_scale=guidance_scale, y=class_labels)
             
-            sample = self._process_sample(sample)
+            sample, class_labels = self._process_sample_label(sample, class_labels)
             self._gather_samples(all_samples, all_labels, sample, class_labels, world_size)
 
             if dist_util.is_main_process() and progress_bar:
-                pbar.update(sample_size * world_size)
-
+                # pbar.update(sample_size * world_size)
+                pbar.update(sample.shape[0] * world_size)
+                
         return all_samples, all_labels
-    
-    # def _get_y_cond(self, sample_size, num_classes):
-    #     y_cond = None  
-    #     if self.args.class_cond:
-    #         if self.args.class_labels is not None:  
-    #             assert len(self.args.class_labels) == sample_size, (f"Length of class_labels ({len(self.args.class_labels)}) must match sample_size ({sample_size})")
-    #             assert all(isinstance(x, int) and 0 <= x < num_classes for x in self.args.class_labels), (f"Class labels must be integers in [0, {num_classes})")
-    #             y_cond = torch.tensor(self.args.class_labels, device=self.device)
-    #         else:
-    #             y_cond = torch.randint(0, num_classes, (sample_size,), device=self.device)
-    #     return y_cond
 
     def _get_y_cond(self, sample_size, num_classes):
         if not self.args.class_cond:
             return None
-    
+
         labels = self.args.class_labels
         if labels is None:
             return torch.randint(0, num_classes, (sample_size,), device=self.device)
-    
+
         assert all(isinstance(x, int) and 0 <= x < num_classes for x in labels), \
             f"class_labels must be integers in [0, {num_classes})"
         assert len(labels) <= sample_size, \
             f"len(class_labels) must be <= sample_size ({sample_size})"
-    
+
         labels = torch.tensor(labels, device=self.device, dtype=torch.long)
         return labels[torch.randint(len(labels), (sample_size,), device=self.device)]
-    
+
     def _gather_samples(self, all_samples, all_labels, sample, labels, world_size):
         """Gather samples across devices if running in parallel."""
         if self.args.parallel:
@@ -210,7 +201,8 @@ class Sampler:
         """Prepare conditional and unconditional labels based on guidance scale."""
         if not float_equal(self.args.guidance_scale, 1.0):
             z = torch.cat((z, z), dim=0)
-            y_uncond = torch.randint(num_classes, num_classes + 1, (sample_size,), device=self.device)
+            y_uncond = torch.full((sample_size,), num_classes, device=self.device, dtype=torch.long)
+            # y_uncond = torch.randint(num_classes, num_classes + 1, (sample_size,), device=self.device)
             return torch.cat((y_cond, y_uncond), dim=0), z 
         return y_cond, z
 
@@ -220,17 +212,34 @@ class Sampler:
             return lambda t: guidance_scale if (t_from <= t < t_to) else 1.0
         return lambda t: guidance_scale
 
-    def _process_sample(self, sample):
+    def _process_sample_label(self, samples, labels=None):
+        """
+        Process samples and optionally labels.
+        For CFG-based samplers, remove the null-class half from both samples and labels.
+        """
         if not float_equal(self.args.guidance_scale, 1.0) and self.args.solver != 'ddim':
-            sample, _ = sample.chunk(2, dim=0) # Remove null class samples       
-        """Process and decode sample if using VAE."""
+            samples, labels = self._strip_null_class(samples, labels)
+
         if self.vae is not None:
             with torch.no_grad(), torch.cuda.amp.autocast():
-                sample = sample.to(dtype=self.vae.dtype,)
+                samples = samples.to(dtype=self.vae.dtype)
                 # Encoded with scale factor 0.18215. Decode by dividing by it for accurate reconstruction and to avoid FID errors.
-                sample = self.vae.decode(sample / self.args.latent_scale).sample
-        return self._inverse_normalize(sample)
-    
+                samples = self.vae.decode(samples / self.args.latent_scale).sample
+
+        samples = self._inverse_normalize(samples)
+        return samples, labels
+
+    def _strip_null_class(self, sample, labels=None):
+        """
+        If CFG duplicates the batch into [cond | uncond],
+        keep only the conditional half for both samples and labels.
+        """
+        if not float_equal(self.args.guidance_scale, 1.0) and self.args.solver != 'ddim':
+            sample, _ = sample.chunk(2, dim=0)
+            if labels is not None:
+                labels, _ = labels.chunk(2, dim=0)
+        return sample, labels
+
     def _inverse_normalize(self, sample):
         """Inverse the normalization to bring the sample back to the original image range."""
         return ((sample + 1) * 127.5).clamp(0, 255).to(torch.uint8).permute(0, 2, 3, 1).contiguous()
