@@ -27,6 +27,8 @@ class Net(torch.nn.Module):
         C_2             = 0.008,            # Timestep adjustment at high noise levels.
         M               = 1000,             # Original number of timesteps in the DDPM formulation.
         noise_schedule  = 'linear',
+        lambda_max=10.0,
+        lambda_min=-10.0,
     ):
         super().__init__()
         self.img_resolution = img_resolution
@@ -39,7 +41,9 @@ class Net(torch.nn.Module):
         self.model = model
         self.noise_schedule = noise_schedule
         self.pred_type = pred_type  # 'eps', 'x0', or 'v'
-
+        self.lambda_max = lambda_max
+        self.lambda_min = lambda_min
+        
         u = torch.zeros(M + 1)
         for j in range(M, 0, -1):  # M, ..., 1
             u[j - 1] = ((u[j] ** 2 + 1) / (self.alpha_bar(j - 1) / self.alpha_bar(j)).clip(min=C_1) - 1).sqrt()
@@ -114,7 +118,12 @@ class Net(torch.nn.Module):
             alphas = 1.0 - betas
             alphas_cumprod = np.cumprod(alphas, axis=0)
             return alphas_cumprod[self.M - j]
-            
+        
+        elif self.noise_schedule == 'linear_logsnr':
+            t = (self.M - j) / self.M
+            lam = self.lambda_max + t * (self.lambda_min - self.lambda_max)
+            return torch.sigmoid(lam)  
+        
         else:
             raise NotImplementedError(f"unknown path type: {self.noise_schedule}")
 
