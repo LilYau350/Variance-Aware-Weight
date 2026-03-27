@@ -36,7 +36,7 @@ def parse_args():
     # Gaussian Diffusion
     parser.add_argument("--model_mode",type=str,default="diffusion",choices=["diffusion", "flow"],
                                                     help="Choose diffusion mode: 'flow' for SDE/ODE-based modeling, 'diffusion' for DDPM-like modeling.")
-    parser.add_argument("--path_type", type=str, default='linear', choices=['linear', 'cosine'], help="Path type for flow matching and diffusion")  
+    parser.add_argument("--path_type", type=str, default='linear', choices=['linear', 'linear_logsnr', 'cosine'], help="Path type for flow matching and diffusion")   
     parser.add_argument('--time_dist', nargs='+', default=['uniform', -0.8, 0.8], help="Time sampling distribution for mean flow training: ['uniform'] or ['lognorm', mu, sigma]")
     
     # Flow matching
