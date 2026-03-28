@@ -1181,6 +1181,13 @@ class FlowMatching:
             sigma_t = th.sin(t * np.pi / 2)
             d_alpha_t = -np.pi / 2 * th.sin(t * np.pi / 2)
             d_sigma_t =  np.pi / 2 * th.cos(t * np.pi / 2)
+        elif self.path_type == "linear_logsnr":
+            lambda_max = 10; lambda_min = -10.0
+            lam = lambda_max + t * (lambda_min - lambda_max)
+            alpha_t = th.sigmoid(0.5 * lam)
+            sigma_t = th.sigmoid(-0.5 * lam)
+            d_alpha_t = -10.0 * alpha_t * sigma_t
+            d_sigma_t = -d_alpha_t
         else:
             raise NotImplementedError()
 
