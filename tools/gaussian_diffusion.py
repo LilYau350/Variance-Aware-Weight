@@ -1123,14 +1123,14 @@ def compute_mse_loss_weight(model_mean_type, mse_loss_weight_type, t, alpha, sig
             
     elif model_mean_type.name == "VECTOR":
         if mse_loss_weight_type == 'lambda':
-            mse_loss_weight = (sigma - alpha) ** 2 / (alpha**2 + sigma**2)
+            mse_loss_weight = th.ones_like(t)
 
     elif model_mean_type.name == "VELOCITY":
         if mse_loss_weight_type.startswith("min_snr_"):
             k = float(mse_loss_weight_type.split('min_snr_')[-1])
             mse_loss_weight = th.stack([snr, k * th.ones_like(t)], dim=1).min(dim=1)[0] / (snr + 1)
         elif mse_loss_weight_type == 'lambda':
-            mse_loss_weight = (alpha * sigma)**2 / (alpha**2 + sigma **2)  # 2 * alpha * sigma
+            mse_loss_weight = alpha * sigma
 
     if mse_loss_weight is None:
         raise ValueError(f"Invalid mse_loss_weight_type: {mse_loss_weight_type}")
