@@ -26,8 +26,6 @@ dependencies:
   - zlib=1.2.13=h5eee18b_0
   - pip:
     - accelerate==1.9.0
-    - adabelief-pytorch==0.2.1
-    - adabound==0.0.5
     - colorama==0.4.6
     - filelock==3.18.0
     - fsspec==2025.7.0
