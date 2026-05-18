@@ -263,11 +263,6 @@ def eval(args, **kwargs):
     if dist_util.is_main_process():
         print(f"Model(EMA): IS:{ema_is_score:.2f}, FID:{ema_fid:.2f}, sFID:{ema_sfid:.2f}, Pre:{ema_pre:.2f}, Rec:{ema_rec:.2f}")
         
-    top1, top5 = None, None
-    # if args.learn_classify:
-    #     top1, top5 = eval_accuracy(args, val_loader, ema_model, kwargs['sample_diffusion'], kwargs['device'], desc="Val-Dataset", topk=(1,5))   
-    #     if dist_util.is_main_process():
-    #         print(f"Model(EMA): Top-1:{top1:.2f}%, Top-5:{top5:.2f}%")      
     metrics = {
         'IS (EMA)': ema_is_score,
         'FID (EMA)': ema_fid,
@@ -275,10 +270,7 @@ def eval(args, **kwargs):
         'Pre. (EMA)': ema_pre,
         'Rec. (EMA)': ema_rec,
     }
-    if top1 is not None and top5 is not None:
-        metrics['Top-1 (EMA)'] = top1
-        metrics['Top-5 (EMA)'] = top5
-        
+
     #if dist_util.is_main_process():
     save_metrics_to_csv(args, metrics, step)
             
@@ -354,8 +346,6 @@ def init(args):
         if args.parallel:
             model = DDP(model, device_ids=[local_rank], output_device=local_rank)
             ema_model = DDP(ema_model, device_ids=[local_rank], output_device=local_rank)
-            # model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True,)
-            # ema_model = DDP(ema_model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True,)
             
     classifier = Classifier(args, device, ema_model) if args.use_classifier else None
     sampler = Sampler(args, device, ema_model, sample_diffusion, classifier=classifier)
